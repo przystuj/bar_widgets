@@ -3,7 +3,7 @@ function widget:GetInfo()
         name = "Buildings Tracker",
         desc = "Shows counters for pinpointers, nukes and junos. Click building icon to select one, shift click to select all",
         author = "SuperKitowiec",
-        version = 0.1,
+        version = 0.2,
         license = "GNU GPL, v2 or later",
         layer = 0
     }
@@ -22,6 +22,7 @@ local red
 local green
 local yellow
 local white
+local spectatorMode
 
 local nukeNames = {
 	armsilo = true, 		-- arm nuke
@@ -73,6 +74,8 @@ function widget:Initialize()
         widgetHandler:RemoveWidget(self)
         return
     end
+	
+	spectatorMode = Spring.GetSpectatingState()
 
     backgroundColor = MasterFramework:Color(0, 0, 0, 0)
     red = MasterFramework:Color(1, 0, 0, 1)
@@ -131,13 +134,13 @@ local function displayPinpointers(pinpointersCount)
     )
 end
 
-local function display(nukes, icon)
+local function display(buildings, icon)
     local stockpile = 0
     local maxStockpilePercent = 0
     local color
     local unitsToSelect = {}
 
-    for _, unitId in ipairs(nukes) do
+    for _, unitId in ipairs(buildings) do
         local unitStockpile, _, unitBuildPercent = Spring.GetUnitStockpile(unitId)
         if unitStockpile > 0 then
             table.insert(unitsToSelect, unitId)
@@ -153,8 +156,13 @@ local function display(nukes, icon)
     else
         color = green
     end
-    local text = MasterFramework:Text(string.format("%d", stockpile), color)
-    local text2 = MasterFramework:Text(string.format("%02d%%", maxStockpilePercent), white)
+    local stockpileText = MasterFramework:Text(string.format("%d", stockpile), color)
+    local buildPercentText = MasterFramework:Text(string.format("%02d%%", maxStockpilePercent), white)
+	
+	if #buildings == 0 then 
+		buildPercentText = nil
+		stockpileText = nil
+	end
 
     return MasterFramework:VerticalStack({
         MasterFramework:Button(
@@ -174,8 +182,8 @@ local function display(nukes, icon)
             end
         ),
         MasterFramework:HorizontalStack({
-            text,
-            text2
+            stockpileText,
+            buildPercentText
         },
         MasterFramework:Dimension(6),
         1
@@ -186,14 +194,18 @@ local function display(nukes, icon)
     )
 end
 
+local function findUnits(teamIDs, unitDefIDs)
+	return table.reduce(teamIDs, function(acc, teamID)
+		table.append(acc, Spring.GetTeamUnitsByDefs(teamID, unitDefIDs))
+		return acc
+	end, {})
+end
+
 function widget:GameFrame(n)
     contentStack.members = {}
-
     local pinpointersCount = 0
     local allUnits = Spring.GetAllUnits()
-    local nukes = Spring.GetTeamUnitsByDefs(Spring.GetMyTeamID(), nukeDefIDs)
-    local junos = Spring.GetTeamUnitsByDefs(Spring.GetMyTeamID(), junoDefIDs)
-
+	
     for _, unitId in ipairs(allUnits) do
         if Spring.IsUnitAllied(unitId) then
             if pinpointerNames[UnitDefs[Spring.GetUnitDefID(unitId)].name] then
@@ -201,13 +213,30 @@ function widget:GameFrame(n)
             end
         end
     end
-
     table.insert(contentStack.members, displayPinpointers(pinpointersCount))
-
-    if (#junos > 0) then
+	
+	local teamId
+	if spectatorMode then
+		teamId = Spring.GetMyAllyTeamID()
+	else
+		teamId = Spring.GetMyTeamID()
+	end
+	
+    local nukes
+    local junos
+	if spectatorMode then
+		local teamIds = Spring.GetTeamList(teamId)
+		nukes = findUnits(teamIds, nukeDefIDs)
+		junos = findUnits(teamIds, junoDefIDs)
+	else
+		nukes = Spring.GetTeamUnitsByDefs(teamId, nukeDefIDs)
+		junos = Spring.GetTeamUnitsByDefs(teamId, junoDefIDs)
+	end
+	
+    if (#junos > 0 or spectatorMode) then
         table.insert(contentStack.members, display(junos, junoDefIDs[1]))
     end
-    if (#nukes > 0) then
+    if (#nukes > 0 or spectatorMode) then
         table.insert(contentStack.members, display(nukes, nukeDefIDs[1]))
     end
 
