@@ -3,7 +3,7 @@ function widget:GetInfo()
         name = "Buildings Tracker",
         desc = "Shows counters for pinpointers, nukes and junos. Click building icon to select one, shift click to select all",
         author = "SuperKitowiec",
-        version = 0.2,
+        version = 0.3,
         license = "GNU GPL, v2 or later",
         layer = 0
     }
@@ -14,7 +14,7 @@ end
 ------------------------------------------------------------------------------------------------------------
 
 local MasterFramework
-local requiredFrameworkVersion = 41
+local requiredFrameworkVersion = 42
 local key
 local backgroundColor
 local contentStack
@@ -68,11 +68,9 @@ local function dump(o)
 end
 
 function widget:Initialize()
-    MasterFramework = WG.MasterFramework[requiredFrameworkVersion]
+    MasterFramework = WG["MasterFramework " .. requiredFrameworkVersion]
     if not MasterFramework then
-        Spring.Echo("MasterFramework " .. requiredFrameworkVersion .. " not found! Removing self.")
-        widgetHandler:RemoveWidget(self)
-        return
+        error("[WidgetName] Error: MasterFramework " .. requiredFrameworkVersion .. " not found! Removing self.")
     end
 	
 	spectatorMode = Spring.GetSpectatingState()
@@ -244,8 +242,5 @@ function widget:GameFrame(n)
 end
 
 function widget:Shutdown()
-    if WG.MasterStats then
-        WG.MasterStats:Refresh()
-    end
     MasterFramework:RemoveElement(key)
 end
