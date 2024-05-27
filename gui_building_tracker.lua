@@ -221,6 +221,12 @@ local function findUnits(teamIDs, unitDefIDs)
     end, {})
 end
 
+local function callUpdate(id, value)
+    if countersCache[id] then
+        countersCache[id]:update(value)
+    end
+end
+
 local function redrawContent()
     contentStack.members = {}
 
@@ -246,14 +252,9 @@ local function redrawContent()
         table.insert(contentStack.members, UnitWithStockpileCounter("nukes", nukeDefIDs[1]))
     end
 
-    if #countersCache > 0 then
-        countersCache[pinpointersId]:update(pinpointersCount)
-        countersCache[nukesId]:update(nukes)
-        countersCache[junosId]:update(junos)
-    end
-
-
-
+    callUpdate(pinpointersId, pinpointersCount)
+    callUpdate(nukesId, nukes)
+    callUpdate(junosId, junos)
 end
 
 function widget:GameFrame(frame)
