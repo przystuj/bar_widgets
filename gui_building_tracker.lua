@@ -53,6 +53,7 @@ for unitDefID, unitDef in pairs(UnitDefs) do
 end
 
 local iconSize = 50
+local refreshFrequency = 5
 
 local function applyColor(currentColor, newColor)
     currentColor.r = newColor.r
@@ -119,7 +120,7 @@ local function UnitCounter(id, greenThreshold)
             1
     )
 
-    function counter:Update(unitCount)
+    function counter:update(unitCount)
         local newColor
         if unitCount == 0 then
             newColor = red
@@ -175,7 +176,7 @@ local function UnitWithStockpileCounter(id, icon)
             1
     )
 
-    function counter:Update(units)
+    function counter:update(units)
         local stockpile = 0
         local maxStockpilePercent = 0
         local color
@@ -220,18 +221,9 @@ local function findUnits(teamIDs, unitDefIDs)
     end, {})
 end
 
-function widget:GameFrame(n)
+local function redrawContent()
     contentStack.members = {}
-    local pinpointersCount = 0
-    local allUnits = Spring.GetAllUnits()
 
-    for _, unitId in ipairs(allUnits) do
-        if Spring.IsUnitAllied(unitId) then
-            if pinpointerNames[UnitDefs[Spring.GetUnitDefID(unitId)].name] then
-                pinpointersCount = pinpointersCount + 1
-            end
-        end
-    end
     table.insert(contentStack.members, UnitCounter(pinpointersId, 3))
 
     local teamId, teamIds
@@ -245,6 +237,7 @@ function widget:GameFrame(n)
 
     local nukes = findUnits(teamIds, nukeDefIDs)
     local junos = findUnits(teamIds, junoDefIDs)
+    local pinpointersCount = #findUnits(Spring.GetTeamList(teamId), pinpointerDefIDs)
 
     if (#junos > 0 or spectatorMode) then
         table.insert(contentStack.members, UnitWithStockpileCounter("junos", junoDefIDs[1]))
@@ -253,9 +246,15 @@ function widget:GameFrame(n)
         table.insert(contentStack.members, UnitWithStockpileCounter("nukes", nukeDefIDs[1]))
     end
 
-    countersCache[pinpointersId]:Update(pinpointersCount)
-    countersCache[nukesId]:Update(nukes)
-    countersCache[junosId]:Update(junos)
+    countersCache[pinpointersId]:update(pinpointersCount)
+    countersCache[nukesId]:update(nukes)
+    countersCache[junosId]:update(junos)
+end
+
+function widget:GameFrame(frame)
+    if frame % refreshFrequency == 0 then
+        redrawContent()
+    end
 end
 
 function widget:Shutdown()
