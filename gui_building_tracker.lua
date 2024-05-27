@@ -246,9 +246,14 @@ local function redrawContent()
         table.insert(contentStack.members, UnitWithStockpileCounter("nukes", nukeDefIDs[1]))
     end
 
-    countersCache[pinpointersId]:update(pinpointersCount)
-    countersCache[nukesId]:update(nukes)
-    countersCache[junosId]:update(junos)
+    if #countersCache > 0 then
+        countersCache[pinpointersId]:update(pinpointersCount)
+        countersCache[nukesId]:update(nukes)
+        countersCache[junosId]:update(junos)
+    end
+
+
+
 end
 
 function widget:GameFrame(frame)
