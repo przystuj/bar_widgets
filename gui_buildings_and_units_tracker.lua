@@ -3,7 +3,7 @@ local widgetName = "Buildings/Units Tracker"
 function widget:GetInfo()
     return {
         name = widgetName,
-        desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterDefinition to add counters for different units",
+        desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units",
         author = "SuperKitowiec",
         version = 0.5,
         license = "GNU GPL, v2 or later",
@@ -12,6 +12,10 @@ function widget:GetInfo()
 end
 
 --[[
+Each counterGroup is a separate draggable window with own counterDefinitions.counterDefinitions.counterDefinitions.
+In this case, counter group "buildings" will show pinpointers, nukes and junos and group "units" will show transports.
+You can add own groups and definitions, just make sure that their ids are unique. You can make each group vertical or horizontal
+
 Counter definition params:
 id = unique identifier of the counter
 alwaysVisible = if false, counter is displayed only if value is > 0
@@ -20,40 +24,61 @@ unitNames = list of unit names. You can find them in url of this site https://ww
 counterType = COUNTER_TYPE_BASIC or COUNTER_TYPE_STOCKPILE. Basic is just a number of units/buildings. Stockpile shows current stockpile of missiles instead
 greenThreshold (optional, only for COUNTER_TYPE_BASIC) = if counter is below greenThreshold the text will be yellow.
 skipWhenSpectating = counter won't be shown when spectating
+icon = specify which unit icon should be displayed. For example icon = "armack"
 ]]
 local COUNTER_TYPE_BASIC, COUNTER_TYPE_STOCKPILE = "basic", "stockpile"
-local counterDefinition = {
-    {
-        id = "pinpointers",
-        alwaysVisible = true,
-        teamWide = true,
-        unitNames = { armtarg = true, cortarg = true, },
-        counterType = COUNTER_TYPE_BASIC,
-        greenThreshold = 3
+local COUNTER_TYPE_HORIZONTAL, COUNTER_TYPE_VERTICAL = "horizontal", "vertical"
+local counterGroups = {
+    buildings = {
+        type = COUNTER_TYPE_HORIZONTAL,
+        counterDefinitions = {
+            {
+                id = "pinpointers",
+                alwaysVisible = true,
+                teamWide = true,
+                unitNames = { armtarg = true, cortarg = true, },
+                counterType = COUNTER_TYPE_BASIC,
+                greenThreshold = 3
+            },
+            {
+                id = "nukes",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { armsilo = true, corsilo = true },
+                counterType = COUNTER_TYPE_STOCKPILE
+            },
+            {
+                id = "junos",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { armjuno = true, corjuno = true, },
+                counterType = COUNTER_TYPE_STOCKPILE
+            }
+        }
     },
-    {
-        id = "nukes",
-        alwaysVisible = false,
-        teamWide = false,
-        unitNames = { armsilo = true, corsilo = true },
-        counterType = COUNTER_TYPE_STOCKPILE
+    groundBuilders = {
+        type = COUNTER_TYPE_HORIZONTAL,
+        counterDefinitions = {
+            {
+                id = "t1cons",
+                alwaysVisible = true,
+                teamWide = false,
+                unitNames = {  corck = true, armcv = true, corcv = true, cormuskrat = true, armbeaver = true, armcs = true, corcs = true, corch = true, armch = true},
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+                icon = "armck"
+            },
+            {
+                id = "t2cons",
+                alwaysVisible = true,
+                teamWide = false,
+                unitNames = { armack = true, corack = true, armacv = true, coracv = true, armacsub = true, coracsub = true },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+                icon = "armack"
+            }
+        }
     },
-    {
-        id = "junos",
-        alwaysVisible = false,
-        teamWide = false,
-        unitNames = { armjuno = true, corjuno = true, },
-        counterType = COUNTER_TYPE_STOCKPILE
-    },
-    -- example: it will show counter of all transports (cor and arm, t1 and t2)
-    --{
-    --    id = "transports",
-    --    alwaysVisible = false,
-    --    teamWide = false,
-    --    unitNames = { armatlas = true, armdfly = true, corvalk = true, corseah = true, },
-    --    counterType = COUNTER_TYPE_BASIC,
-    --    skipWhenSpectating = true,
-    --},
 }
 
 local config = {
@@ -86,7 +111,7 @@ local OPTION_SPECS = {
 
 local MasterFramework
 local requiredFrameworkVersion = 42
-local key, contentStack, countersCache
+local countersCache
 local red, green, yellow, white, backgroundColor, font
 local spectatorMode
 
@@ -117,7 +142,7 @@ local function UnitIcon(counterDef)
             MasterFramework:Dimension(config.iconSize),
             MasterFramework:Dimension(config.iconSize),
             MasterFramework:Dimension(3),
-            { MasterFramework:Image("#" .. counterDef.unitDefs[1]) }
+            { MasterFramework:Image("#" .. (counterDef.icon ~= nil and counterDef.icon or counterDef.unitDefs[1])) }
     )
 end
 
@@ -132,11 +157,7 @@ local function UnitCounter(counterDef)
             {
                 MasterFramework:Button(UnitIcon(counterDef), function()
                     local _, _, _, shift = Spring.GetModKeyState()
-
-                    if not shift then
-                        unitsToSelect = { unitsToSelect[1] }
-                    end
-                    Spring.SelectUnitArray(unitsToSelect, shift)
+                    Spring.SelectUnitArray(shift and unitsToSelect or { unitsToSelect[1] }, false)
                 end)
             , counterText },
             MasterFramework:Dimension(8), 1
@@ -238,12 +259,17 @@ local counterType = {
 
 local function initUnitDefs()
     for unitDefID, unitDef in pairs(UnitDefs) do
-        for _, counterDef in pairs(counterDefinition) do
-            if counterDef.unitDefs == nil then
-                counterDef.unitDefs = {}
-            end
-            if counterDef.unitNames[unitDef.name] then
-                table.insert(counterDef.unitDefs, unitDefID)
+        for _, counterGroup in pairs(counterGroups) do
+            for _, counterDef in pairs(counterGroup.counterDefinitions) do
+                if counterDef.unitDefs == nil then
+                    counterDef.unitDefs = {}
+                end
+                if counterDef.unitNames[unitDef.name] then
+                    table.insert(counterDef.unitDefs, unitDefID)
+                end
+                if counterDef.icon == unitDef.name then
+                    counterDef.icon = unitDefID
+                end
             end
         end
     end
@@ -269,19 +295,23 @@ end
 
 -- Widget logic
 local function onFrame()
-    contentStack.members = {}
+    for _, counterGroup in pairs(counterGroups) do
+        counterGroup.contentStack.members = {}
+    end
 
     local playerId, teamIds = updateTeamIds()
 
-    for _, counterDef in ipairs(counterDefinition) do
-        if not counterDef.skipWhenSpectating or not spectatorMode then
-            local playerIdsToSearch = counterDef.teamWide and teamIds or playerId
-            local units = findUnits(playerIdsToSearch, counterDef.unitDefs)
-            counterDef.data = units
-            if hasData(counterDef) or counterDef.alwaysVisible or spectatorMode then
-                table.insert(contentStack.members, counterType[counterDef.counterType](counterDef))
+    for _, counterGroup in pairs(counterGroups) do
+        for _, counterDef in ipairs(counterGroup.counterDefinitions) do
+            if not counterDef.skipWhenSpectating or not spectatorMode then
+                local playerIdsToSearch = counterDef.teamWide and teamIds or playerId
+                local units = findUnits(playerIdsToSearch, counterDef.unitDefs)
+                counterDef.data = units
+                if hasData(counterDef) or counterDef.alwaysVisible or spectatorMode then
+                    table.insert(counterGroup.contentStack.members, counterType[counterDef.counterType](counterDef))
+                end
+                callUpdate(counterDef)
             end
-            callUpdate(counterDef)
         end
     end
 end
@@ -350,6 +380,8 @@ function widget:Initialize()
     end
 
     initUnitDefs()
+    counterType[COUNTER_TYPE_HORIZONTAL] = MasterFramework.HorizontalStack
+    counterType[COUNTER_TYPE_VERTICAL] = MasterFramework.VerticalStack
 
     spectatorMode = Spring.GetSpectatingState()
     countersCache = {}
@@ -361,29 +393,32 @@ function widget:Initialize()
     white = MasterFramework:Color(1, 1, 1, 1)
     font = MasterFramework:Font("Exo2-SemiBold.otf", config.iconSize / 4.8)
 
-    contentStack = MasterFramework:HorizontalStack({}, MasterFramework:Dimension(8), 1)
+    for counterGroupId, counterGroup in pairs(counterGroups) do
+        local frameId = widgetName .. counterGroupId
 
-    key = MasterFramework:InsertElement(
-            MasterFramework:MovableFrame(
-                    widgetName,
-                    MasterFramework:PrimaryFrame(
-                            MasterFramework:MarginAroundRect(
-                                    contentStack,
-                                    MasterFramework:Dimension(5),
-                                    MasterFramework:Dimension(5),
-                                    MasterFramework:Dimension(5),
-                                    MasterFramework:Dimension(5),
-                                    { backgroundColor },
-                                    MasterFramework:Dimension(5),
-                                    true
-                            )
-                    ),
-                    1700,
-                    900
-            ),
-            widgetName,
-            MasterFramework.layerRequest.bottom()
-    )
+        counterGroup.contentStack = counterType[counterGroup.type](MasterFramework, {}, MasterFramework:Dimension(8), 1)
+        counterGroup.key = MasterFramework:InsertElement(
+                MasterFramework:MovableFrame(
+                        frameId,
+                        MasterFramework:PrimaryFrame(
+                                MasterFramework:MarginAroundRect(
+                                        counterGroup.contentStack,
+                                        MasterFramework:Dimension(5),
+                                        MasterFramework:Dimension(5),
+                                        MasterFramework:Dimension(5),
+                                        MasterFramework:Dimension(5),
+                                        { backgroundColor },
+                                        MasterFramework:Dimension(5),
+                                        true
+                                )
+                        ),
+                        1700,
+                        900
+                ),
+                frameId,
+                MasterFramework.layerRequest.bottom()
+        )
+    end
 end
 
 function widget:GameFrame(frame)
@@ -393,7 +428,10 @@ function widget:GameFrame(frame)
 end
 
 function widget:Shutdown()
-    MasterFramework:RemoveElement(key)
+    for _, counterGroup in pairs(counterGroups) do
+        MasterFramework:RemoveElement(counterGroup.key)
+    end
+
     if WG['options'] ~= nil then
         WG['options'].removeOptions(table.map(OPTION_SPECS, getOptionId))
     end
