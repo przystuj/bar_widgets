@@ -76,7 +76,7 @@ function SmartSelect()
                 SendCommands("select FromMouse_400+_IdMatches_" .. radarsAndJammersQuery .. "+_ClearSelection_SelectAll+")
                 if #GetSelectedUnits() == 0 then
                     -- select low hp units close to the cursor
-                    SendCommands("select FromMouse_800+_Not_Building_Not_RelativeHealth_50+_ClearSelection_SelectAll+")
+                    SendCommands("select FromMouse_400+_Not_Building_Not_RelativeHealth_50+_ClearSelection_SelectAll+")
                     if #GetSelectedUnits() == 0 then
                         -- select any unit close to the cursor
                         SendCommands("select FromMouse_100+_Not_Building+_ClearSelection_SelectClosestToCursor+")
