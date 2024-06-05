@@ -5,7 +5,7 @@ function widget:GetInfo()
         name = widgetName,
         desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units",
         author = "SuperKitowiec",
-        version = 0.6,
+        version = 0.7,
         license = "GNU GPL, v2 or later",
         layer = 0
     }
@@ -13,7 +13,6 @@ end
 
 --[[
 Each counterGroup is a separate draggable window with own counterDefinitions.counterDefinitions.counterDefinitions.
-In this case, counter group "buildings" will show pinpointers, nukes and junos and group "units" will show transports.
 You can add own groups and definitions, just make sure that their ids are unique. You can make each group vertical or horizontal
 
 Counter definition params:
@@ -22,7 +21,7 @@ alwaysVisible = if false, counter is displayed only if value is > 0
 teamWide = if true, it counts across the whole team
 unitNames = list of unit names. You can find them in url of this site https://www.beyondallreason.info/unit/armflea. For example Tick's name is armflea
 counterType = COUNTER_TYPE_BASIC or COUNTER_TYPE_STOCKPILE. Basic is just a number of units/buildings. Stockpile shows current stockpile of missiles instead
-greenThreshold (optional, only for COUNTER_TYPE_BASIC) = if counter is below greenThreshold the text will be yellow.
+greenThreshold (optional, only for COUNTER_TYPE_BASIC) = if counter is below greenThreshold the text is yellow. If it's above, the text is green.
 skipWhenSpectating = counter won't be shown when spectating
 icon = specify which unit icon should be displayed. For example icon = "armack"
 ]]
@@ -56,26 +55,95 @@ local counterGroups = {
             }
         }
     },
-    groundBuilders = {
+    air = {
+        type = COUNTER_TYPE_HORIZONTAL,
+        counterDefinitions = {
+            {
+                id = "airt1cons",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { armca = true, corca = true, corcsa = true, armcsa = true },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+            },
+            {
+                id = "airt2cons",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { armaca = true, coraca = true },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+            },
+            {
+                id = "transports",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { armatlas = true, armdfly = true, corvalk = true, corseah = true, },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+            },
+            {
+                id = "air scouts",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { armpeep = true, armsehak = true, armawac = true, corfink = true, corhunt = true, corfink = true, },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+            }
+        }
+    },
+    ground = {
         type = COUNTER_TYPE_HORIZONTAL,
         counterDefinitions = {
             {
                 id = "t1cons",
-                alwaysVisible = true,
+                alwaysVisible = false,
                 teamWide = false,
-                unitNames = {  corck = true, armcv = true, corcv = true, cormuskrat = true, armbeaver = true, armcs = true, corcs = true, corch = true, armch = true},
+                unitNames = { armck = true, corck = true, armcv = true, corcv = true, cormuskrat = true, armbeaver = true,
+                              armcs = true, corcs = true, corch = true, armch = true },
                 counterType = COUNTER_TYPE_BASIC,
                 skipWhenSpectating = true,
                 icon = "armck"
             },
             {
                 id = "t2cons",
-                alwaysVisible = true,
+                alwaysVisible = false,
                 teamWide = false,
                 unitNames = { armack = true, corack = true, armacv = true, coracv = true, armacsub = true, coracsub = true },
                 counterType = COUNTER_TYPE_BASIC,
                 skipWhenSpectating = true,
                 icon = "armack"
+            },
+            {
+                id = "resbots",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { armrectr = true, cornecro = true, },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+                icon = "armrectr"
+            },
+            {
+                id = "t1labs",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { armsy = true, armlab = true, armvp = true, armap = true, armfhp = true, armhp = true,
+                              armamsub = true, armplat = true, corsy = true, corlab = true, corvp = true, corap = true,
+                              corfhp = true, corhp = true, coramsub = true, corplat = true, },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+                icon = "armlab"
+            },
+            {
+                id = "t2labs",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { armalab = true, armavp = true, armaap = true, armfhp = true, armasy = true, armshltx = true,
+                              armshltxuw = true, coravp = true, coralab = true, corasy = true, coraap = true,
+                              corgantuw = true, corgant = true, },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+                icon = "armalab"
             }
         }
     },
@@ -109,10 +177,9 @@ local OPTION_SPECS = {
     }
 }
 
-local MasterFramework
 local requiredFrameworkVersion = 42
-local countersCache
-local red, green, yellow, white, backgroundColor, font
+local countersCache, font, MasterFramework
+local red, green, yellow, white, backgroundColor, lightBlack
 local spectatorMode
 
 -- Functions
@@ -146,6 +213,18 @@ local function UnitIcon(counterDef)
     )
 end
 
+local function TextWithBackground(text)
+    return MasterFramework:MarginAroundRect(text,
+            MasterFramework:Dimension(5),
+            MasterFramework:Dimension(1),
+            MasterFramework:Dimension(3),
+            MasterFramework:Dimension(2),
+            { lightBlack },
+            MasterFramework:Dimension(5),
+            true
+    )
+end
+
 local function UnitCounter(counterDef)
     if countersCache[counterDef.id] then
         return countersCache[counterDef.id]
@@ -153,15 +232,23 @@ local function UnitCounter(counterDef)
     local unitsToSelect = {}
     local currentColor = MasterFramework:Color(1, 1, 1, 1)
     local counterText = MasterFramework:Text("", currentColor, font)
-    local counter = MasterFramework:VerticalStack(
-            {
-                MasterFramework:Button(UnitIcon(counterDef), function()
-                    local _, _, _, shift = Spring.GetModKeyState()
-                    Spring.SelectUnitArray(shift and unitsToSelect or { unitsToSelect[1] }, false)
-                end)
-            , counterText },
-            MasterFramework:Dimension(8), 1
-    )
+    local counter = MasterFramework:Button(
+            MasterFramework:MarginAroundRect(
+                    MasterFramework:StackInPlace({ UnitIcon(counterDef),
+                                                   TextWithBackground(counterText)
+                    }, 0.975, 0.025),
+                    MasterFramework:Dimension(3),
+                    MasterFramework:Dimension(3),
+                    MasterFramework:Dimension(3),
+                    MasterFramework:Dimension(3),
+                    { backgroundColor },
+                    MasterFramework:Dimension(10),
+                    true
+            ),
+            function()
+                local _, _, _, shift = Spring.GetModKeyState()
+                Spring.SelectUnitArray(shift and unitsToSelect or { unitsToSelect[1] }, false)
+            end)
 
     function counter:update(units)
         unitsToSelect = units
@@ -169,10 +256,10 @@ local function UnitCounter(counterDef)
         local newColor
         if unitCount == 0 then
             newColor = red
-        elseif greenThreshold and unitCount < greenThreshold then
+        elseif counterDef.greenThreshold and unitCount < counterDef.greenThreshold then
             newColor = yellow
         else
-            newColor = green
+            newColor = counterDef.greenThreshold and green or white
         end
 
         counterText:SetString(string.format("%d", unitCount))
@@ -192,20 +279,26 @@ local function UnitWithStockpileCounter(counterDef)
     local stockpileText = MasterFramework:Text("", stockpileColor, font)
     local buildPercentText = MasterFramework:Text("", white, font)
 
-    local counter = MasterFramework:VerticalStack(
-            {
-                MasterFramework:Button(UnitIcon(counterDef), function()
-                    local _, _, _, shift = Spring.GetModKeyState()
-
-                    if not shift then
-                        unitsToSelect = { unitsToSelect[1] }
-                    end
-                    Spring.SelectUnitArray(unitsToSelect, shift)
-                end),
-                MasterFramework:HorizontalStack({ buildPercentText, stockpileText, }, MasterFramework:Dimension(6), 1)
-            },
-            MasterFramework:Dimension(8), 1
-    )
+    local counter = MasterFramework:Button(
+            MasterFramework:MarginAroundRect(
+                    MasterFramework:StackInPlace({ UnitIcon(counterDef),
+                                                   MasterFramework:VerticalStack({
+                                                       TextWithBackground(stockpileText),
+                                                       TextWithBackground(buildPercentText),
+                                                   }, MasterFramework:Dimension(1), 1),
+                    }, 0.975, 0.025),
+                    MasterFramework:Dimension(3),
+                    MasterFramework:Dimension(3),
+                    MasterFramework:Dimension(3),
+                    MasterFramework:Dimension(3),
+                    { backgroundColor },
+                    MasterFramework:Dimension(10),
+                    true
+            ),
+            function()
+                local _, _, _, shift = Spring.GetModKeyState()
+                Spring.SelectUnitArray(shift and unitsToSelect or { unitsToSelect[1] }, false)
+            end)
 
     function counter:update(units)
         if #units == 0 then
@@ -294,6 +387,37 @@ local function hasData(counterDef)
 end
 
 -- Widget logic
+local function displayCounterGroup(counterGroupId, counterGroup)
+    local frameId = widgetName .. counterGroupId
+    if counterGroup.key == nil or MasterFramework:GetElement(counterGroup.key) == nil then
+        counterGroup.key = MasterFramework:InsertElement(
+                MasterFramework:MovableFrame(
+                        frameId,
+                        MasterFramework:PrimaryFrame(
+                                MasterFramework:MarginAroundRect(
+                                        counterGroup.contentStack,
+                                        MasterFramework:Dimension(5),
+                                        MasterFramework:Dimension(5),
+                                        MasterFramework:Dimension(5),
+                                        MasterFramework:Dimension(5),
+                                        { backgroundColor },
+                                        MasterFramework:Dimension(5),
+                                        true
+                                )
+                        ),
+                        1700,
+                        900
+                ),
+                frameId,
+                MasterFramework.layerRequest.bottom()
+        )
+    end
+end
+
+local function hideCounterGroup(counterGroup)
+    MasterFramework:RemoveElement(counterGroup.key)
+end
+
 local function onFrame()
     for _, counterGroup in pairs(counterGroups) do
         counterGroup.contentStack.members = {}
@@ -301,7 +425,8 @@ local function onFrame()
 
     local playerId, teamIds = updateTeamIds()
 
-    for _, counterGroup in pairs(counterGroups) do
+    for counterGroupId, counterGroup in pairs(counterGroups) do
+        local counterGroupIsVisible = false
         for _, counterDef in ipairs(counterGroup.counterDefinitions) do
             if not counterDef.skipWhenSpectating or not spectatorMode then
                 local playerIdsToSearch = counterDef.teamWide and teamIds or playerId
@@ -309,9 +434,15 @@ local function onFrame()
                 counterDef.data = units
                 if hasData(counterDef) or counterDef.alwaysVisible or spectatorMode then
                     table.insert(counterGroup.contentStack.members, counterType[counterDef.counterType](counterDef))
+                    counterGroupIsVisible = true
                 end
                 callUpdate(counterDef)
             end
+        end
+        if not counterGroupIsVisible then
+            hideCounterGroup(counterGroup)
+        else
+            displayCounterGroup(counterGroupId, counterGroup)
         end
     end
 end
@@ -332,7 +463,7 @@ end
 
 local function applyOptions()
     if MasterFramework ~= nil then
-        font = MasterFramework:Font("Exo2-SemiBold.otf", config.iconSize / 4.8)
+        font = MasterFramework:Font("Exo2-SemiBold.otf", config.iconSize / 4)
     end
     countersCache = {}
 end
@@ -386,38 +517,16 @@ function widget:Initialize()
     spectatorMode = Spring.GetSpectatingState()
     countersCache = {}
 
+    lightBlack = MasterFramework:Color(0, 0, 0, 0.8)
     backgroundColor = MasterFramework:Color(0, 0, 0, 0.9)
-    red = MasterFramework:Color(1, 0, 0, 1)
-    green = MasterFramework:Color(0, 1, 0, 1)
-    yellow = MasterFramework:Color(1, 1, 0, 1)
-    white = MasterFramework:Color(1, 1, 1, 1)
-    font = MasterFramework:Font("Exo2-SemiBold.otf", config.iconSize / 4.8)
+    red = MasterFramework:Color(0.9, 0, 0, 1)
+    green = MasterFramework:Color(0.4, 0.92, 0.4, 1)
+    yellow = MasterFramework:Color(0.9, 0.9, 0, 1)
+    white = MasterFramework:Color(0.92, 0.92, 0.92, 1)
+    font = MasterFramework:Font("Exo2-SemiBold.otf", config.iconSize / 4)
 
-    for counterGroupId, counterGroup in pairs(counterGroups) do
-        local frameId = widgetName .. counterGroupId
-
+    for _, counterGroup in pairs(counterGroups) do
         counterGroup.contentStack = counterType[counterGroup.type](MasterFramework, {}, MasterFramework:Dimension(8), 1)
-        counterGroup.key = MasterFramework:InsertElement(
-                MasterFramework:MovableFrame(
-                        frameId,
-                        MasterFramework:PrimaryFrame(
-                                MasterFramework:MarginAroundRect(
-                                        counterGroup.contentStack,
-                                        MasterFramework:Dimension(5),
-                                        MasterFramework:Dimension(5),
-                                        MasterFramework:Dimension(5),
-                                        MasterFramework:Dimension(5),
-                                        { backgroundColor },
-                                        MasterFramework:Dimension(5),
-                                        true
-                                )
-                        ),
-                        1700,
-                        900
-                ),
-                frameId,
-                MasterFramework.layerRequest.bottom()
-        )
     end
 end
 
