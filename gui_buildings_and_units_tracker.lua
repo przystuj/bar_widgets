@@ -213,13 +213,13 @@ local function UnitIcon(counterDef)
     )
 end
 
-local function TextWithBackground(text)
+local function TextWithBackground(text, textBackgroundColor)
     return MasterFramework:MarginAroundRect(text,
             MasterFramework:Dimension(5),
             MasterFramework:Dimension(1),
             MasterFramework:Dimension(3),
             MasterFramework:Dimension(2),
-            { lightBlack },
+            { textBackgroundColor or lightBlack },
             MasterFramework:Dimension(5),
             true
     )
@@ -276,6 +276,7 @@ local function UnitWithStockpileCounter(counterDef)
     end
     local unitsToSelect = {}
     local stockpileColor = MasterFramework:Color(1, 0, 0, 1)
+    local textBackgroundColor = MasterFramework:Color(0, 0, 0, 0.8)
     local stockpileText = MasterFramework:Text("", stockpileColor, font)
     local buildPercentText = MasterFramework:Text("", white, font)
 
@@ -283,8 +284,8 @@ local function UnitWithStockpileCounter(counterDef)
             MasterFramework:MarginAroundRect(
                     MasterFramework:StackInPlace({ UnitIcon(counterDef),
                                                    MasterFramework:VerticalStack({
-                                                       TextWithBackground(stockpileText),
-                                                       TextWithBackground(buildPercentText),
+                                                       TextWithBackground(stockpileText, textBackgroundColor),
+                                                       TextWithBackground(buildPercentText, textBackgroundColor),
                                                    }, MasterFramework:Dimension(1), 1),
                     }, 0.975, 0.025),
                     MasterFramework:Dimension(3),
@@ -304,6 +305,7 @@ local function UnitWithStockpileCounter(counterDef)
         if #units == 0 then
             stockpileText:SetString("")
             buildPercentText:SetString("")
+            textBackgroundColor.a = 0
             return
         end
 
@@ -315,7 +317,7 @@ local function UnitWithStockpileCounter(counterDef)
 
         for _, unitId in ipairs(units) do
             local unitStockpile, unitStockpileSlotsLeft, unitBuildPercent = Spring.GetUnitStockpile(unitId)
-            if unitStockpile > 0 then
+            if unitStockpile > 0 or spectatorMode then
                 table.insert(unitsToSelect, unitId)
             end
             stockpileSlotsLeft = stockpileSlotsLeft + unitStockpileSlotsLeft
@@ -333,11 +335,11 @@ local function UnitWithStockpileCounter(counterDef)
 
         stockpileText:SetString(string.format("%d", stockpile))
         applyColor(stockpileColor, color)
+        applyColor(textBackgroundColor, lightBlack)
         if stockpileSlotsLeft == 0 then
             buildPercentText:SetString("max")
         else
             buildPercentText:SetString(string.format("%2d%%", maxStockpilePercent))
-
         end
     end
 
