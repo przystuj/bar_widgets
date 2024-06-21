@@ -12,10 +12,13 @@ function widget:GetInfo()
         2. One builder. Repeating will cycle the builders in range.
         3. One skuttle/spybot, close to the cursor
         4. All radar and jammers, close to the cursor
-        5. Otherwise - cycle your labs across the whole map.
+        5. Otherwise:
+         - If nothing could be selected in previous steps - cycle your labs across the whole map.
+         - If something could be selected in previous steps - select all units from the selected group/all visible units of selected type
+           (this one is mostly used for cycling between damaged units and their group)
         ]],
         author = "SuperKitowiec",
-        version = 1.2,
+        version = 1.3,
         layer = 0,
         enabled = true
     }
@@ -91,9 +94,9 @@ local function dump(o)
     end
 end
 
-local function print(message)
+local function debug(message)
     if debugMode then
-        Spring.SendCommands(string.format("say a:%s", message))
+        Spring.SendCommands(string.format("say a:%s", dump(message)))
     end
 end
 
@@ -184,6 +187,7 @@ local function setsEqual(set1, set2)
 end
 
 local selectedUnits = {}
+local cycleBuildings;
 local function sendCommand(command, message)
     SendCommands(command)
     local newSelectedUnits = GetSelectedUnits();
@@ -191,21 +195,51 @@ local function sendCommand(command, message)
     local isInvalidSelection = #newSelectedUnits == 0 or selectionNotChanged
 
     if not isInvalidSelection and message ~= nil and debugMode then
-        print(message)
+        debug(message)
     end
 
     if selectionNotChanged and #newSelectedUnits > 0 and #selectedUnits == 0 and debugMode then
-        print("Selection didn't change - trying the next step...")
+        debug("Selection didn't change - trying the next step...")
+    end
+
+    if #newSelectedUnits > 0 then
+        cycleBuildings = false
     end
 
     return isInvalidSelection
 end
 
+local function getBiggestUnitGroup(currentUnits)
+    local unitGroups = {}
+    local result
+    local currentMax = -1
+    for _, unitId in ipairs(currentUnits) do
+        local unitGroup = Spring.GetUnitGroup(unitId)
+        if unitGroup ~= nil then
+            if unitGroups[unitGroup] == nil then
+                unitGroups[unitGroup] = 1
+            else
+                unitGroups[unitGroup] = unitGroups[unitGroup] + 1
+            end
+        end
+    end
+
+    for groupId, count in pairs(unitGroups) do
+        if count > currentMax then
+            currentMax = count
+            result = groupId
+        end
+    end
+
+    return result
+end
+
 local function SmartSelect()
-    selectedUnits = GetSelectedUnits();
+    cycleBuildings = true
+    selectedUnits = GetSelectedUnits()
 
     sendCommand("select FromMouseC_35+_Not_Building+_ClearSelection_SelectClosestToCursor+")
-    local newSelectedUnits = GetSelectedUnits();
+    local newSelectedUnits = GetSelectedUnits()
     if #newSelectedUnits > 0 then
         local unitGroup = Spring.GetUnitGroup(newSelectedUnits[1])
         if unitGroup ~= nil then
@@ -218,7 +252,22 @@ local function SmartSelect()
             if sendCommand("select FromMouseC_400+_Buildoptions_Not_Building+_ClearSelection_SelectNum_1+", "Cycling through nearby builders...") then
                 if sendCommand("select FromMouseC_200+_IdMatches_" .. specialUnitsQuery .. "+_ClearSelection_SelectClosestToCursor+", "Selecting single spybot or skuttle") then
                     if sendCommand("select FromMouseC_400+_IdMatches_" .. radarsAndJammersQuery .. "+_ClearSelection_SelectAll+", "Selecting nearby radars and jammers") then
-                        sendCommand("select AllMap+_Buildoptions_Building+_ClearSelection_SelectNum_1+", "Cycling through labs across the map...")
+                        if cycleBuildings then
+                            sendCommand("select AllMap+_Buildoptions_Building+_ClearSelection_SelectNum_1+", "Cycling through labs across the map...")
+                        else
+                            debug("Cycling relative hp units...")
+                            if #selectedUnits > 0 then
+                                local unitGroup = getBiggestUnitGroup(selectedUnits)
+                                Spring.SelectUnitArray(selectedUnits)
+                                if unitGroup ~= nil then
+                                    debug("Selecting all units in group " .. unitGroup)
+                                    SendCommands("group " .. unitGroup)
+                                else
+                                    debug("Selecting visible units of this type")
+                                    SendCommands("select Visible+_InPrevSel+_ClearSelection_SelectAll+")
+                                end
+                            end
+                        end
                     end
                 end
             end
