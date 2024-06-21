@@ -4,19 +4,24 @@ function widget:GetInfo()
     return {
         name = widgetName,
         desc = [[
-        Adds a select action which tries to select, in order:
-        1. Units with relative hp (default <50%), in current selection. If selection didn't change, go to the next step.
-        2. One builder, close to the cursor
+        Adds a select action which tries to select units depending on cursor location.
+        If cursor is almost directly next to the unit it will select all units from the same group.
+        If unit is not in group it will select all visible units of this type.
+        Otherwise, it will select units close to the cursor. If selection didn't change it will go to the next step:
+        1. Units with relative hp (default <50%).
+        2. One builder. Repeating will cycle the builders in range.
         3. One skuttle/spybot, close to the cursor
         4. All radar and jammers, close to the cursor
-        5. Otherwise - select single unit close to the cursor and select its group or all visible units of its type
+        5. Otherwise - cycle your labs across the whole map.
         ]],
         author = "SuperKitowiec",
-        version = 1.1,
+        version = 1.2,
         layer = 0,
         enabled = true
     }
 end
+
+local debugMode = false
 
 local config = {
     healthThreshold = 50,
@@ -70,6 +75,27 @@ local radarAndJammerNames = {
 }
 
 local specialUnitsQuery, radarsAndJammersQuery, relativeHealthQuery;
+
+local function dump(o)
+    if type(o) == 'table' then
+        local s = '{ '
+        for k, v in pairs(o) do
+            if type(k) ~= 'number' then
+                k = '"' .. k .. '"'
+            end
+            s = s .. '[' .. k .. '] = ' .. dump(v) .. ','
+        end
+        return s .. '} '
+    else
+        return tostring(o)
+    end
+end
+
+local function print(message)
+    if debugMode then
+        Spring.SendCommands(string.format("say a:%s", message))
+    end
+end
 
 local function tableKeys(tbl)
     local keys = {}
@@ -131,6 +157,75 @@ local function createOptionFromSpec(optionSpec)
     return option
 end
 
+local function setsEqual(set1, set2)
+    if #set1 ~= #set2 then
+        return false
+    end
+
+    local setMap = {}
+    for _, value in ipairs(set1) do
+        setMap[value] = (setMap[value] or 0) + 1
+    end
+
+    for _, value in ipairs(set2) do
+        if not setMap[value] or setMap[value] == 0 then
+            return false
+        end
+        setMap[value] = setMap[value] - 1
+    end
+
+    for _, count in pairs(setMap) do
+        if count ~= 0 then
+            return false
+        end
+    end
+
+    return true
+end
+
+local selectedUnits = {}
+local function sendCommand(command, message)
+    SendCommands(command)
+    local newSelectedUnits = GetSelectedUnits();
+    local selectionNotChanged = setsEqual(selectedUnits, newSelectedUnits)
+    local isInvalidSelection = #newSelectedUnits == 0 or selectionNotChanged
+
+    if not isInvalidSelection and message ~= nil and debugMode then
+        print(message)
+    end
+
+    if selectionNotChanged and #newSelectedUnits > 0 and #selectedUnits == 0 and debugMode then
+        print("Selection didn't change - trying the next step...")
+    end
+
+    return isInvalidSelection
+end
+
+local function SmartSelect()
+    selectedUnits = GetSelectedUnits();
+
+    sendCommand("select FromMouseC_35+_Not_Building+_ClearSelection_SelectClosestToCursor+")
+    local newSelectedUnits = GetSelectedUnits();
+    if #newSelectedUnits > 0 then
+        local unitGroup = Spring.GetUnitGroup(newSelectedUnits[1])
+        if unitGroup ~= nil then
+            sendCommand("group " .. Spring.GetUnitGroup(newSelectedUnits[1]), "Selecting all units in the group")
+        else
+            sendCommand("select Visible+_InPrevSel+_ClearSelection_SelectAll+", "Selecting visible units of this type")
+        end
+    else
+        if sendCommand("select FromMouseC_400+_Not_Building_" .. relativeHealthQuery .. "+_ClearSelection_SelectAll+", "Selecting units with relative hp (default <50%)") then
+            if sendCommand("select FromMouseC_400+_Buildoptions_Not_Building+_ClearSelection_SelectNum_1+", "Cycling through nearby builders...") then
+                if sendCommand("select FromMouseC_200+_IdMatches_" .. specialUnitsQuery .. "+_ClearSelection_SelectClosestToCursor+", "Selecting single spybot or skuttle") then
+                    if sendCommand("select FromMouseC_400+_IdMatches_" .. radarsAndJammersQuery .. "+_ClearSelection_SelectAll+", "Selecting nearby radars and jammers") then
+                        sendCommand("select AllMap+_Buildoptions_Building+_ClearSelection_SelectNum_1+", "Cycling through labs across the map...")
+                    end
+                end
+            end
+        end
+    end
+end
+
 function widget:Initialize()
     if WG['options'] ~= nil then
         WG['options'].addOptions(table.map(OPTION_SPECS, createOptionFromSpec))
@@ -142,48 +237,6 @@ function widget:Initialize()
             and "Not_RelativeHealth_" .. config.healthThreshold
             or "RelativeHealth_" .. config.healthThreshold
     widgetHandler:AddAction("context_select", SmartSelect, nil, 'p')
-end
-
-function SmartSelect()
-    local clearSelection = true
-    for _, unitId in ipairs(GetSelectedUnits()) do
-        local health, maxHealth = Spring.GetUnitHealth(unitId)
-        local healthPercent = health / maxHealth * 100
-
-        if (config.selectDamaged and healthPercent > config.healthThreshold) or
-                (not config.selectDamaged and healthPercent <= config.healthThreshold) then
-            clearSelection = false
-        end
-
-    end
-
-    if clearSelection then
-        Spring.SelectUnitArray({})
-    end
-
-    SendCommands("select PrevSelection+_Not_Building_" .. relativeHealthQuery .. "+_ClearSelection_SelectAll+")
-
-    if #GetSelectedUnits() == 0 then
-        SendCommands("select FromMouse_200+_Buildoptions_Not_Building+_ClearSelection_SelectNum_1+")
-        if #GetSelectedUnits() == 0 then
-            SendCommands("select FromMouse_200+_IdMatches_" .. specialUnitsQuery .. "+_ClearSelection_SelectClosestToCursor+")
-            if #GetSelectedUnits() == 0 then
-                SendCommands("select FromMouse_400+_IdMatches_" .. radarsAndJammersQuery .. "+_ClearSelection_SelectAll+")
-                if #GetSelectedUnits() == 0 then
-                    SendCommands("select FromMouse_100+_Not_Building+_ClearSelection_SelectClosestToCursor+")
-                    selectedUnits = GetSelectedUnits()
-                    if #selectedUnits > 0 then
-                        local unitGroup = Spring.GetUnitGroup(selectedUnits[1])
-                        if unitGroup ~= nil then
-                            SendCommands("group " .. Spring.GetUnitGroup(selectedUnits[1]))
-                        else
-                            SendCommands("select Visible+_InPrevSel+_ClearSelection_SelectAll+")
-                        end
-                    end
-                end
-            end
-        end
-    end
 end
 
 function widget:Shutdown()
