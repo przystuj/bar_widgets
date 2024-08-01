@@ -5,7 +5,7 @@ function widget:GetInfo()
         name = widgetName,
         desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units",
         author = "SuperKitowiec",
-        version = 0.7,
+        version = 0.8,
         license = "GNU GPL, v2 or later",
         layer = 0
     }
@@ -52,7 +52,7 @@ local counterGroups = {
                 teamWide = false,
                 unitNames = { armjuno = true, corjuno = true, },
                 counterType = COUNTER_TYPE_STOCKPILE
-            }
+            },
         }
     },
     air = {
@@ -92,7 +92,7 @@ local counterGroups = {
             }
         }
     },
-    ground = {
+    groundCons = {
         type = COUNTER_TYPE_HORIZONTAL,
         counterDefinitions = {
             {
@@ -115,6 +115,15 @@ local counterGroups = {
                 icon = "armack"
             },
             {
+                id = "engineers",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { armfark = true, armconsul = true, corfast = true },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+                icon = "corfast"
+            },
+            {
                 id = "resbots",
                 alwaysVisible = false,
                 teamWide = false,
@@ -122,7 +131,12 @@ local counterGroups = {
                 counterType = COUNTER_TYPE_BASIC,
                 skipWhenSpectating = true,
                 icon = "armrectr"
-            },
+            }
+        }
+    },
+    labs = {
+        type = COUNTER_TYPE_HORIZONTAL,
+        counterDefinitions = {
             {
                 id = "t1labs",
                 alwaysVisible = false,
@@ -138,12 +152,43 @@ local counterGroups = {
                 id = "t2labs",
                 alwaysVisible = false,
                 teamWide = false,
-                unitNames = { armalab = true, armavp = true, armaap = true, armfhp = true, armasy = true, armshltx = true,
-                              armshltxuw = true, coravp = true, coralab = true, corasy = true, coraap = true,
-                              corgantuw = true, corgant = true, },
+                unitNames = { armalab = true, armavp = true, armaap = true, armfhp = true, armasy = true,
+                              coravp = true, coralab = true, corasy = true, coraap = true, },
                 counterType = COUNTER_TYPE_BASIC,
                 skipWhenSpectating = true,
                 icon = "armalab"
+            },
+            {
+                id = "t3labs",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { armshltxuw = true, armshltx = true, corgant = true, corgantuw = true },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+                icon = "armshltx"
+            }
+        }
+    },
+    special = {
+        type = COUNTER_TYPE_HORIZONTAL,
+        counterDefinitions = {
+            {
+                id = "spies",
+                alwaysVisible = true,
+                teamWide = false,
+                unitNames = { armspy = true, corspy = true },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+                icon = "armspy"
+            },
+            {
+                id = "skuttles",
+                alwaysVisible = true,
+                teamWide = false,
+                unitNames = { corsktl = true },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+                icon = "corsktl"
             }
         }
     },
@@ -197,6 +242,34 @@ local function findUnits(teamIDs, unitDefIDs)
     end, {})
 end
 
+local function moveCameraToUnit(unitId)
+    local ux, uy, uz = Spring.GetUnitPosition(unitId)
+    local camState = Spring.GetCameraState()
+    camState.px = ux
+    camState.py = 0
+    camState.pz = uz
+    Spring.SetCameraState(camState, 1)
+end
+
+local function dump(o)
+    if type(o) == 'table' then
+        local s = '{ '
+        for k, v in pairs(o) do
+            if type(k) ~= 'number' then
+                k = '"' .. k .. '"'
+            end
+            s = s .. '[' .. k .. '] = ' .. dump(v) .. ','
+        end
+        return s .. '} '
+    else
+        return tostring(o)
+    end
+end
+
+local function debug(message)
+    Spring.SendCommands(string.format("say a:%s", dump(message)))
+end
+
 local function callUpdate(counterDef)
     if countersCache[counterDef.id] then
         countersCache[counterDef.id]:update(counterDef.data)
@@ -232,6 +305,8 @@ local function UnitCounter(counterDef)
     local unitsToSelect = {}
     local currentColor = MasterFramework:Color(1, 1, 1, 1)
     local counterText = MasterFramework:Text("", currentColor, font)
+    local currentSelectedUnitIndex = 0
+
     local counter = MasterFramework:Button(
             MasterFramework:MarginAroundRect(
                     MasterFramework:StackInPlace({ UnitIcon(counterDef),
@@ -246,9 +321,20 @@ local function UnitCounter(counterDef)
                     true
             ),
             function()
-                local _, _, _, shift = Spring.GetModKeyState()
-                Spring.SelectUnitArray(shift and unitsToSelect or { unitsToSelect[1] }, false)
-            end)
+                local _, isCtrlClick, _, isShiftClick = Spring.GetModKeyState()
+                currentSelectedUnitIndex = currentSelectedUnitIndex + 1
+                if (currentSelectedUnitIndex > #unitsToSelect) then
+                    currentSelectedUnitIndex = 1
+                end
+                table.sort(unitsToSelect)
+                local unitArray = isShiftClick and unitsToSelect or { unitsToSelect[currentSelectedUnitIndex] }
+                local shouldMoveCamera = isCtrlClick and not isShiftClick
+                Spring.SelectUnitArray(unitArray, false)
+                if shouldMoveCamera then
+                    moveCameraToUnit(unitArray[1])
+                end
+            end
+    )
 
     function counter:update(units)
         unitsToSelect = units
@@ -279,6 +365,7 @@ local function UnitWithStockpileCounter(counterDef)
     local textBackgroundColor = MasterFramework:Color(0, 0, 0, 0.8)
     local stockpileText = MasterFramework:Text("", stockpileColor, font)
     local buildPercentText = MasterFramework:Text("", white, font)
+    local currentSelectedUnitIndex = 0
 
     local counter = MasterFramework:Button(
             MasterFramework:MarginAroundRect(
@@ -297,9 +384,20 @@ local function UnitWithStockpileCounter(counterDef)
                     true
             ),
             function()
-                local _, _, _, shift = Spring.GetModKeyState()
-                Spring.SelectUnitArray(shift and unitsToSelect or { unitsToSelect[1] }, false)
-            end)
+                local _, isCtrlClick, _, isShiftClick = Spring.GetModKeyState()
+                currentSelectedUnitIndex = currentSelectedUnitIndex + 1
+                if (currentSelectedUnitIndex > #unitsToSelect) then
+                    currentSelectedUnitIndex = 1
+                end
+                table.sort(unitsToSelect)
+                local unitArray = isShiftClick and unitsToSelect or { unitsToSelect[currentSelectedUnitIndex] }
+                local shouldMoveCamera = isCtrlClick and not isShiftClick
+                Spring.SelectUnitArray(unitArray, false)
+                if shouldMoveCamera then
+                    moveCameraToUnit(unitArray[1])
+                end
+            end
+    )
 
     function counter:update(units)
         if #units == 0 then
