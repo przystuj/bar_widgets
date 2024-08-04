@@ -86,7 +86,7 @@ local counterGroups = {
                 id = "air scouts",
                 alwaysVisible = false,
                 teamWide = false,
-                unitNames = { armpeep = true, armsehak = true, armawac = true, corfink = true, corhunt = true, corfink = true, },
+                unitNames = { armpeep = true, armsehak = true, armawac = true, corfink = true, corhunt = true },
                 counterType = COUNTER_TYPE_BASIC,
                 skipWhenSpectating = true,
             }
@@ -99,8 +99,18 @@ local counterGroups = {
                 id = "t1cons",
                 alwaysVisible = false,
                 teamWide = false,
-                unitNames = { armck = true, corck = true, armcv = true, corcv = true, cormuskrat = true, armbeaver = true,
-                              armcs = true, corcs = true, corch = true, armch = true },
+                unitNames = {
+                    armck = true,
+                    corck = true,
+                    armcv = true,
+                    corcv = true,
+                    cormuskrat = true,
+                    armbeaver = true,
+                    armcs = true,
+                    corcs = true,
+                    corch = true,
+                    armch = true
+                },
                 counterType = COUNTER_TYPE_BASIC,
                 skipWhenSpectating = true,
                 icon = "armck"
@@ -141,9 +151,24 @@ local counterGroups = {
                 id = "t1labs",
                 alwaysVisible = false,
                 teamWide = false,
-                unitNames = { armsy = true, armlab = true, armvp = true, armap = true, armfhp = true, armhp = true,
-                              armamsub = true, armplat = true, corsy = true, corlab = true, corvp = true, corap = true,
-                              corfhp = true, corhp = true, coramsub = true, corplat = true, },
+                unitNames = {
+                    armsy = true,
+                    armlab = true,
+                    armvp = true,
+                    armap = true,
+                    armfhp = true,
+                    armhp = true,
+                    armamsub = true,
+                    armplat = true,
+                    corsy = true,
+                    corlab = true,
+                    corvp = true,
+                    corap = true,
+                    corfhp = true,
+                    corhp = true,
+                    coramsub = true,
+                    corplat = true,
+                },
                 counterType = COUNTER_TYPE_BASIC,
                 skipWhenSpectating = true,
                 icon = "armlab"
@@ -152,8 +177,17 @@ local counterGroups = {
                 id = "t2labs",
                 alwaysVisible = false,
                 teamWide = false,
-                unitNames = { armalab = true, armavp = true, armaap = true, armfhp = true, armasy = true,
-                              coravp = true, coralab = true, corasy = true, coraap = true, },
+                unitNames = {
+                    armalab = true,
+                    armavp = true,
+                    armaap = true,
+                    armfhp = true,
+                    armasy = true,
+                    coravp = true,
+                    coralab = true,
+                    corasy = true,
+                    coraap = true,
+                },
                 counterType = COUNTER_TYPE_BASIC,
                 skipWhenSpectating = true,
                 icon = "armalab"
@@ -174,7 +208,7 @@ local counterGroups = {
         counterDefinitions = {
             {
                 id = "spies",
-                alwaysVisible = true,
+                alwaysVisible = false,
                 teamWide = false,
                 unitNames = { armspy = true, corspy = true },
                 counterType = COUNTER_TYPE_BASIC,
@@ -183,7 +217,7 @@ local counterGroups = {
             },
             {
                 id = "skuttles",
-                alwaysVisible = true,
+                alwaysVisible = false,
                 teamWide = false,
                 unitNames = { corsktl = true },
                 counterType = COUNTER_TYPE_BASIC,
@@ -197,6 +231,7 @@ local counterGroups = {
 local config = {
     iconSize = 50,
     refreshFrequency = 5,
+    trackFactoryQuotas = true,
 }
 
 local OPTION_SPECS = {
@@ -219,13 +254,22 @@ local OPTION_SPECS = {
         max = 60,
         step = 1,
         value = 5,
+    },
+    {
+        configVariable = "trackFactoryQuotas",
+        name = "Track Factory Quotas",
+        description = "Tracks units added to factory quotas (requires cmd_factory_quota widget)",
+        type = "bool",
+        value = true,
     }
 }
 
 local requiredFrameworkVersion = 42
-local countersCache, font, MasterFramework
+local countersCache, font, MasterFramework, FactoryQuotas
 local red, green, yellow, white, backgroundColor, lightBlack
 local spectatorMode
+local trackFactoryQuotasCounterGroup = "trackFactoryQuotasCounterGroup"
+local COUNTER_TYPE_FACTORY_QUOTA = "counterQuota"
 
 -- Functions
 local function applyColor(currentColor, newColor)
@@ -272,7 +316,7 @@ end
 
 local function callUpdate(counterDef)
     if countersCache[counterDef.id] then
-        countersCache[counterDef.id]:update(counterDef.data)
+        countersCache[counterDef.id]:update(counterDef)
     end
 end
 
@@ -298,14 +342,31 @@ local function TextWithBackground(text, textBackgroundColor)
     )
 end
 
+local handleClick = function(buttonParams)
+    local _, isCtrlClick, _, isShiftClick = Spring.GetModKeyState()
+    buttonParams.currentSelectedUnitIndex = buttonParams.currentSelectedUnitIndex + 1
+    if (buttonParams.currentSelectedUnitIndex > #buttonParams.unitsToSelect) then
+        buttonParams.currentSelectedUnitIndex = 1
+    end
+    table.sort(buttonParams.unitsToSelect)
+    local unitArray = isShiftClick and buttonParams.unitsToSelect or { buttonParams.unitsToSelect[buttonParams.currentSelectedUnitIndex] }
+    local shouldMoveCamera = isCtrlClick and not isShiftClick
+    Spring.SelectUnitArray(unitArray, false)
+    if shouldMoveCamera then
+        moveCameraToUnit(unitArray[1])
+    end
+end
+
 local function UnitCounter(counterDef)
     if countersCache[counterDef.id] then
         return countersCache[counterDef.id]
     end
-    local unitsToSelect = {}
     local currentColor = MasterFramework:Color(1, 1, 1, 1)
     local counterText = MasterFramework:Text("", currentColor, font)
-    local currentSelectedUnitIndex = 0
+    local buttonParams = {
+        unitsToSelect = {},
+        currentSelectedUnitIndex = 0
+    }
 
     local counter = MasterFramework:Button(
             MasterFramework:MarginAroundRect(
@@ -321,24 +382,13 @@ local function UnitCounter(counterDef)
                     true
             ),
             function()
-                local _, isCtrlClick, _, isShiftClick = Spring.GetModKeyState()
-                currentSelectedUnitIndex = currentSelectedUnitIndex + 1
-                if (currentSelectedUnitIndex > #unitsToSelect) then
-                    currentSelectedUnitIndex = 1
-                end
-                table.sort(unitsToSelect)
-                local unitArray = isShiftClick and unitsToSelect or { unitsToSelect[currentSelectedUnitIndex] }
-                local shouldMoveCamera = isCtrlClick and not isShiftClick
-                Spring.SelectUnitArray(unitArray, false)
-                if shouldMoveCamera then
-                    moveCameraToUnit(unitArray[1])
-                end
+                handleClick(buttonParams)
             end
     )
 
-    function counter:update(units)
-        unitsToSelect = units
-        local unitCount = #units
+    function counter:update(counterDef)
+        buttonParams.unitsToSelect = counterDef.data
+        local unitCount = #counterDef.data
         local newColor
         if unitCount == 0 then
             newColor = red
@@ -356,16 +406,67 @@ local function UnitCounter(counterDef)
     return counter
 end
 
+local function FactoryQuotaCounter(counterDef)
+    if countersCache[counterDef.id] then
+        return countersCache[counterDef.id]
+    end
+    local currentColor = MasterFramework:Color(1, 1, 1, 1)
+    local counterText = MasterFramework:Text("", currentColor, font)
+    local buttonParams = {
+        unitsToSelect = {},
+        currentSelectedUnitIndex = 0
+    }
+
+    local counter = MasterFramework:Button(
+            MasterFramework:MarginAroundRect(
+                    MasterFramework:StackInPlace({ UnitIcon(counterDef),
+                                                   TextWithBackground(counterText)
+                    }, 0.975, 0.025),
+                    MasterFramework:Dimension(3),
+                    MasterFramework:Dimension(3),
+                    MasterFramework:Dimension(3),
+                    MasterFramework:Dimension(3),
+                    { backgroundColor },
+                    MasterFramework:Dimension(10),
+                    true
+            ),
+            function()
+                handleClick(buttonParams)
+            end
+    )
+
+    function counter:update(counterDef)
+        buttonParams.unitsToSelect = counterDef.data
+        local unitCount = #counterDef.data
+        local newColor
+        if unitCount == 0 then
+            newColor = red
+        elseif counterDef.greenThreshold and unitCount < counterDef.greenThreshold then
+            newColor = yellow
+        else
+            newColor = counterDef.greenThreshold and green or white
+        end
+
+        counterText:SetString(string.format("%d/%d", unitCount, counterDef.greenThreshold))
+        applyColor(currentColor, newColor)
+    end
+
+    countersCache[counterDef.id] = counter
+    return counter
+end
+
 local function UnitWithStockpileCounter(counterDef)
     if countersCache[counterDef.id] then
         return countersCache[counterDef.id]
     end
-    local unitsToSelect = {}
+    local buttonParams = {
+        unitsToSelect = {},
+        currentSelectedUnitIndex = 0
+    }
     local stockpileColor = MasterFramework:Color(1, 0, 0, 1)
     local textBackgroundColor = MasterFramework:Color(0, 0, 0, 0.8)
     local stockpileText = MasterFramework:Text("", stockpileColor, font)
     local buildPercentText = MasterFramework:Text("", white, font)
-    local currentSelectedUnitIndex = 0
 
     local counter = MasterFramework:Button(
             MasterFramework:MarginAroundRect(
@@ -384,23 +485,12 @@ local function UnitWithStockpileCounter(counterDef)
                     true
             ),
             function()
-                local _, isCtrlClick, _, isShiftClick = Spring.GetModKeyState()
-                currentSelectedUnitIndex = currentSelectedUnitIndex + 1
-                if (currentSelectedUnitIndex > #unitsToSelect) then
-                    currentSelectedUnitIndex = 1
-                end
-                table.sort(unitsToSelect)
-                local unitArray = isShiftClick and unitsToSelect or { unitsToSelect[currentSelectedUnitIndex] }
-                local shouldMoveCamera = isCtrlClick and not isShiftClick
-                Spring.SelectUnitArray(unitArray, false)
-                if shouldMoveCamera then
-                    moveCameraToUnit(unitArray[1])
-                end
+                handleClick(buttonParams)
             end
     )
 
-    function counter:update(units)
-        if #units == 0 then
+    function counter:update(counterDef)
+        if #counterDef.data == 0 then
             stockpileText:SetString("")
             buildPercentText:SetString("")
             textBackgroundColor.a = 0
@@ -411,12 +501,12 @@ local function UnitWithStockpileCounter(counterDef)
         local maxStockpilePercent = 0
         local stockpileSlotsLeft = 0
         local color
-        unitsToSelect = {}
+        buttonParams.unitsToSelect = {}
 
-        for _, unitId in ipairs(units) do
+        for _, unitId in ipairs(counterDef.data) do
             local unitStockpile, unitStockpileSlotsLeft, unitBuildPercent = Spring.GetUnitStockpile(unitId)
             if unitStockpile > 0 or spectatorMode then
-                table.insert(unitsToSelect, unitId)
+                table.insert(buttonParams.unitsToSelect, unitId)
             end
             stockpileSlotsLeft = stockpileSlotsLeft + unitStockpileSlotsLeft
             stockpile = stockpile + unitStockpile
@@ -448,6 +538,7 @@ end
 local counterType = {
     [COUNTER_TYPE_BASIC] = UnitCounter,
     [COUNTER_TYPE_STOCKPILE] = UnitWithStockpileCounter,
+    [COUNTER_TYPE_FACTORY_QUOTA] = FactoryQuotaCounter,
 }
 
 local function initUnitDefs()
@@ -518,7 +609,32 @@ local function hideCounterGroup(counterGroup)
     MasterFramework:RemoveElement(counterGroup.key)
 end
 
+local function isFactoryQuotasTrackerEnabled()
+    return config.trackFactoryQuotas and FactoryQuotas
+end
+
+local function updateFactoryQuotas()
+    if isFactoryQuotasTrackerEnabled() then
+        local counterGroup = counterGroups[trackFactoryQuotasCounterGroup]
+        counterGroup.counterDefinitions = {}
+        for unitDefID, quota in pairs(FactoryQuotas.getQuotas()) do
+            if quota.amount > 0 then
+                table.insert(counterGroup.counterDefinitions, {
+                    id = "trackFactoryQuotasCounterGroup" .. unitDefID,
+                    alwaysVisible = true,
+                    teamWide = false,
+                    unitDefs = { unitDefID },
+                    counterType = COUNTER_TYPE_FACTORY_QUOTA,
+                    greenThreshold = quota.amount,
+                    icon = unitDefID
+                })
+            end
+        end
+    end
+end
+
 local function onFrame()
+    updateFactoryQuotas()
     for _, counterGroup in pairs(counterGroups) do
         counterGroup.contentStack.members = {}
     end
@@ -565,6 +681,19 @@ local function applyOptions()
     if MasterFramework ~= nil then
         font = MasterFramework:Font("Exo2-SemiBold.otf", config.iconSize / 4)
     end
+    if not isFactoryQuotasTrackerEnabled() then
+        if MasterFramework ~= nil then
+            MasterFramework:RemoveElement(counterGroups[trackFactoryQuotasCounterGroup].key)
+        end
+        counterGroups[trackFactoryQuotasCounterGroup] = nil
+    end
+    if isFactoryQuotasTrackerEnabled() and MasterFramework ~= nil then
+        counterGroups[trackFactoryQuotasCounterGroup] = {
+            type = COUNTER_TYPE_HORIZONTAL,
+            counterDefinitions = {},
+            contentStack = counterType[COUNTER_TYPE_HORIZONTAL](MasterFramework, {}, MasterFramework:Dimension(8), 1)
+        }
+    end
     countersCache = {}
 end
 
@@ -602,6 +731,7 @@ end
 
 function widget:Initialize()
     MasterFramework = WG["MasterFramework " .. requiredFrameworkVersion]
+    FactoryQuotas = WG.Quotas
     if not MasterFramework then
         error("[WidgetName] Error: MasterFramework " .. requiredFrameworkVersion .. " not found! Removing self.")
     end
@@ -625,6 +755,9 @@ function widget:Initialize()
     white = MasterFramework:Color(0.92, 0.92, 0.92, 1)
     font = MasterFramework:Font("Exo2-SemiBold.otf", config.iconSize / 4)
 
+    if isFactoryQuotasTrackerEnabled() then
+        counterGroups[trackFactoryQuotasCounterGroup] = { type = COUNTER_TYPE_HORIZONTAL, counterDefinitions = {} }
+    end
     for _, counterGroup in pairs(counterGroups) do
         counterGroup.contentStack = counterType[counterGroup.type](MasterFramework, {}, MasterFramework:Dimension(8), 1)
     end
