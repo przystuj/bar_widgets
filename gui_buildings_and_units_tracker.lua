@@ -417,23 +417,39 @@ local function FactoryQuotaCounter(counterDef)
         currentSelectedUnitIndex = 0
     }
 
-    local counter = MasterFramework:Button(
-            MasterFramework:MarginAroundRect(
-                    MasterFramework:StackInPlace({ UnitIcon(counterDef),
-                                                   TextWithBackground(counterText)
-                    }, 0.975, 0.025),
-                    MasterFramework:Dimension(3),
-                    MasterFramework:Dimension(3),
-                    MasterFramework:Dimension(3),
-                    MasterFramework:Dimension(3),
-                    { backgroundColor },
-                    MasterFramework:Dimension(10),
-                    true
+    local counter = MasterFramework:Responder(
+            MasterFramework:Button(
+                    MasterFramework:MarginAroundRect(
+                            MasterFramework:StackInPlace({ UnitIcon(counterDef),
+                                                           TextWithBackground(counterText)
+                            }, 0.975, 0.025),
+                            MasterFramework:Dimension(3),
+                            MasterFramework:Dimension(3),
+                            MasterFramework:Dimension(3),
+                            MasterFramework:Dimension(3),
+                            { backgroundColor },
+                            MasterFramework:Dimension(10),
+                            true
+                    ),
+                    function()
+                        handleClick(buttonParams)
+                    end
             ),
-            function()
-                handleClick(buttonParams)
-            end
-    )
+            MasterFramework.events.mouseWheel, function(_, _, _, _, value)
+                local alt, ctrl, meta, shift = Spring.GetModKeyState()
+                local quotas = FactoryQuotas.getQuotas()
+                local unitDefID = counterDef.unitDefs[1]
+                local multiplier = 1
+                if ctrl then multiplier = multiplier * 20 end
+                if shift then multiplier = multiplier * 5 end
+                local minValue = 1
+                if meta or quotas[unitDefID].amount == 0 then
+                    minValue = 0
+                end
+                local newAmount = math.max(minValue, quotas[unitDefID].amount + (value * multiplier))
+                quotas[unitDefID].amount = newAmount
+                FactoryQuotas.update(quotas)
+            end)
 
     function counter:update(counterDef)
         buttonParams.unitsToSelect = counterDef.data
