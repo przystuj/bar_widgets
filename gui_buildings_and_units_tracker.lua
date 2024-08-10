@@ -5,7 +5,7 @@ function widget:GetInfo()
         name = widgetName,
         desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units",
         author = "SuperKitowiec",
-        version = 0.10,
+        version = 0.11,
         license = "GNU GPL, v2 or later",
         layer = 0
     }
@@ -439,15 +439,16 @@ local function FactoryQuotaCounter(counterDef)
                 local alt, ctrl, meta, shift = Spring.GetModKeyState()
                 local quotas = FactoryQuotas.getQuotas()
                 local unitDefID = counterDef.unitDefs[1]
+                local factoryID = counterDef.factoryID
                 local multiplier = 1
                 if ctrl then multiplier = multiplier * 20 end
                 if shift then multiplier = multiplier * 5 end
                 local minValue = 1
-                if meta or quotas[unitDefID].amount == 0 then
+                if meta or quotas[factoryID][unitDefID] == 0 then
                     minValue = 0
                 end
-                local newAmount = math.max(minValue, quotas[unitDefID].amount + (value * multiplier))
-                quotas[unitDefID].amount = newAmount
+                local newAmount = math.max(minValue, quotas[factoryID][unitDefID] + (value * multiplier))
+                quotas[factoryID][unitDefID] = newAmount
                 FactoryQuotas.update(quotas)
             end)
 
@@ -633,17 +634,20 @@ local function updateFactoryQuotas()
     if isFactoryQuotasTrackerEnabled() then
         local counterGroup = counterGroups[trackFactoryQuotasCounterGroup]
         counterGroup.counterDefinitions = {}
-        for unitDefID, quota in pairs(FactoryQuotas.getQuotas()) do
-            if quota.amount > 0 then
-                table.insert(counterGroup.counterDefinitions, {
-                    id = "trackFactoryQuotasCounterGroup" .. unitDefID,
-                    alwaysVisible = true,
-                    teamWide = false,
-                    unitDefs = { unitDefID },
-                    counterType = COUNTER_TYPE_FACTORY_QUOTA,
-                    greenThreshold = quota.amount,
-                    icon = unitDefID
-                })
+        for factoryID, factoryQuotas in pairs(FactoryQuotas.getQuotas()) do
+            for unitDefID, quota in pairs(factoryQuotas) do
+                if quota > 0 then
+                    table.insert(counterGroup.counterDefinitions, {
+                        id = "trackFactoryQuotasCounterGroup" .. factoryID .. unitDefID,
+                        alwaysVisible = true,
+                        teamWide = false,
+                        unitDefs = { unitDefID },
+                        counterType = COUNTER_TYPE_FACTORY_QUOTA,
+                        greenThreshold = quota,
+                        icon = unitDefID,
+                        factoryID = factoryID
+                    })
+                end
             end
         end
     end
