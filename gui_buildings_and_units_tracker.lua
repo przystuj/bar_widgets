@@ -5,7 +5,7 @@ function widget:GetInfo()
         name = widgetName,
         desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units",
         author = "SuperKitowiec",
-        version = 0.11,
+        version = 0.12,
         license = "GNU GPL, v2 or later",
         layer = 0
     }
@@ -264,7 +264,7 @@ local OPTION_SPECS = {
     }
 }
 
-local requiredFrameworkVersion = 42
+local requiredFrameworkVersion = 43
 local countersCache, font, MasterFramework, FactoryQuotas
 local red, green, yellow, white, backgroundColor, lightBlack
 local spectatorMode
@@ -272,13 +272,6 @@ local trackFactoryQuotasCounterGroup = "trackFactoryQuotasCounterGroup"
 local COUNTER_TYPE_FACTORY_QUOTA = "counterQuota"
 
 -- Functions
-local function applyColor(currentColor, newColor)
-    currentColor.r = newColor.r
-    currentColor.g = newColor.g
-    currentColor.b = newColor.b
-    currentColor.a = newColor.a
-end
-
 local function findUnits(teamIDs, unitDefIDs)
     return table.reduce(teamIDs, function(acc, teamID)
         table.append(acc, Spring.GetTeamUnitsByDefs(teamID, unitDefIDs))
@@ -322,23 +315,26 @@ end
 
 -- Counters
 local function UnitIcon(counterDef)
-    return MasterFramework:Rect(
-            MasterFramework:Dimension(config.iconSize),
-            MasterFramework:Dimension(config.iconSize),
-            MasterFramework:Dimension(3),
-            { MasterFramework:Image("#" .. (counterDef.icon ~= nil and counterDef.icon or counterDef.unitDefs[1])) }
+    return MasterFramework:Background(
+            MasterFramework:Rect(
+                    MasterFramework:AutoScalingDimension(config.iconSize),
+                    MasterFramework:AutoScalingDimension(config.iconSize)
+            ),
+            { MasterFramework:Image("#" .. (counterDef.icon ~= nil and counterDef.icon or counterDef.unitDefs[1])) },
+            MasterFramework:AutoScalingDimension(5)
     )
 end
 
 local function TextWithBackground(text, textBackgroundColor)
-    return MasterFramework:MarginAroundRect(text,
-            MasterFramework:Dimension(5),
-            MasterFramework:Dimension(1),
-            MasterFramework:Dimension(3),
-            MasterFramework:Dimension(2),
+    return MasterFramework:Background(
+            MasterFramework:MarginAroundRect(text,
+                    MasterFramework:AutoScalingDimension(5),
+                    MasterFramework:AutoScalingDimension(1),
+                    MasterFramework:AutoScalingDimension(3),
+                    MasterFramework:AutoScalingDimension(2)
+            ),
             { textBackgroundColor or lightBlack },
-            MasterFramework:Dimension(5),
-            true
+            MasterFramework:AutoScalingDimension(5)
     )
 end
 
@@ -357,6 +353,21 @@ local handleClick = function(buttonParams)
     end
 end
 
+local function TrackerButton(buttonParams, children)
+    return MasterFramework:Button(
+            MasterFramework:MarginAroundRect(
+                    children,
+                    MasterFramework:AutoScalingDimension(2),
+                    MasterFramework:AutoScalingDimension(2),
+                    MasterFramework:AutoScalingDimension(2),
+                    MasterFramework:AutoScalingDimension(2)
+            ),
+            function()
+                handleClick(buttonParams)
+            end
+    )
+end
+
 local function UnitCounter(counterDef)
     if countersCache[counterDef.id] then
         return countersCache[counterDef.id]
@@ -368,22 +379,8 @@ local function UnitCounter(counterDef)
         currentSelectedUnitIndex = 0
     }
 
-    local counter = MasterFramework:Button(
-            MasterFramework:MarginAroundRect(
-                    MasterFramework:StackInPlace({ UnitIcon(counterDef),
-                                                   TextWithBackground(counterText)
-                    }, 0.975, 0.025),
-                    MasterFramework:Dimension(3),
-                    MasterFramework:Dimension(3),
-                    MasterFramework:Dimension(3),
-                    MasterFramework:Dimension(3),
-                    { backgroundColor },
-                    MasterFramework:Dimension(10),
-                    true
-            ),
-            function()
-                handleClick(buttonParams)
-            end
+    local counter = TrackerButton(buttonParams,
+            MasterFramework:StackInPlace({ UnitIcon(counterDef), TextWithBackground(counterText) }, 0.975, 0.025)
     )
 
     function counter:update(counterDef)
@@ -399,7 +396,7 @@ local function UnitCounter(counterDef)
         end
 
         counterText:SetString(string.format("%d", unitCount))
-        applyColor(currentColor, newColor)
+        counterText:SetBaseColor(newColor)
     end
 
     countersCache[counterDef.id] = counter
@@ -418,22 +415,11 @@ local function FactoryQuotaCounter(counterDef)
     }
 
     local counter = MasterFramework:Responder(
-            MasterFramework:Button(
-                    MasterFramework:MarginAroundRect(
-                            MasterFramework:StackInPlace({ UnitIcon(counterDef),
-                                                           TextWithBackground(counterText)
-                            }, 0.975, 0.025),
-                            MasterFramework:Dimension(3),
-                            MasterFramework:Dimension(3),
-                            MasterFramework:Dimension(3),
-                            MasterFramework:Dimension(3),
-                            { backgroundColor },
-                            MasterFramework:Dimension(10),
-                            true
-                    ),
-                    function()
-                        handleClick(buttonParams)
-                    end
+            TrackerButton(buttonParams,
+                    MasterFramework:StackInPlace({
+                        UnitIcon(counterDef),
+                        TextWithBackground(counterText)
+                    }, 0.975, 0.025)
             ),
             MasterFramework.events.mouseWheel, function(_, _, _, _, value)
                 local alt, ctrl, meta, shift = Spring.GetModKeyState()
@@ -441,8 +427,12 @@ local function FactoryQuotaCounter(counterDef)
                 local unitDefID = counterDef.unitDefs[1]
                 local factoryID = counterDef.factoryID
                 local multiplier = 1
-                if ctrl then multiplier = multiplier * 20 end
-                if shift then multiplier = multiplier * 5 end
+                if ctrl then
+                    multiplier = multiplier * 20
+                end
+                if shift then
+                    multiplier = multiplier * 5
+                end
                 local minValue = 1
                 if meta or quotas[factoryID][unitDefID] == 0 then
                     minValue = 0
@@ -465,7 +455,7 @@ local function FactoryQuotaCounter(counterDef)
         end
 
         counterText:SetString(string.format("%d/%d", unitCount, counterDef.greenThreshold))
-        applyColor(currentColor, newColor)
+        counterText:SetBaseColor(newColor)
     end
 
     countersCache[counterDef.id] = counter
@@ -485,32 +475,21 @@ local function UnitWithStockpileCounter(counterDef)
     local stockpileText = MasterFramework:Text("", stockpileColor, font)
     local buildPercentText = MasterFramework:Text("", white, font)
 
-    local counter = MasterFramework:Button(
-            MasterFramework:MarginAroundRect(
-                    MasterFramework:StackInPlace({ UnitIcon(counterDef),
-                                                   MasterFramework:VerticalStack({
-                                                       TextWithBackground(stockpileText, textBackgroundColor),
-                                                       TextWithBackground(buildPercentText, textBackgroundColor),
-                                                   }, MasterFramework:Dimension(1), 1),
-                    }, 0.975, 0.025),
-                    MasterFramework:Dimension(3),
-                    MasterFramework:Dimension(3),
-                    MasterFramework:Dimension(3),
-                    MasterFramework:Dimension(3),
-                    { backgroundColor },
-                    MasterFramework:Dimension(10),
-                    true
-            ),
-            function()
-                handleClick(buttonParams)
-            end
+    local counter = TrackerButton(buttonParams,
+            MasterFramework:StackInPlace({
+                UnitIcon(counterDef),
+                MasterFramework:VerticalStack({
+                    TextWithBackground(stockpileText, textBackgroundColor),
+                    TextWithBackground(buildPercentText, textBackgroundColor),
+                }, MasterFramework:AutoScalingDimension(1), 1),
+            }, 0.975, 0.025)
     )
 
     function counter:update(counterDef)
         if #counterDef.data == 0 then
             stockpileText:SetString("")
             buildPercentText:SetString("")
-            textBackgroundColor.a = 0
+            textBackgroundColor:SetRawValues(0, 0, 0, 0)
             return
         end
 
@@ -539,8 +518,8 @@ local function UnitWithStockpileCounter(counterDef)
         end
 
         stockpileText:SetString(string.format("%d", stockpile))
-        applyColor(stockpileColor, color)
-        applyColor(textBackgroundColor, lightBlack)
+        stockpileText:SetBaseColor(color)
+        textBackgroundColor:SetRawValues(lightBlack:GetRawValues())
         if stockpileSlotsLeft == 0 then
             buildPercentText:SetString("max")
         else
@@ -602,15 +581,16 @@ local function displayCounterGroup(counterGroupId, counterGroup)
                 MasterFramework:MovableFrame(
                         frameId,
                         MasterFramework:PrimaryFrame(
-                                MasterFramework:MarginAroundRect(
-                                        counterGroup.contentStack,
-                                        MasterFramework:Dimension(5),
-                                        MasterFramework:Dimension(5),
-                                        MasterFramework:Dimension(5),
-                                        MasterFramework:Dimension(5),
+                                MasterFramework:Background(
+                                        MasterFramework:MarginAroundRect(
+                                                counterGroup.contentStack,
+                                                MasterFramework:AutoScalingDimension(1),
+                                                MasterFramework:AutoScalingDimension(1),
+                                                MasterFramework:AutoScalingDimension(1),
+                                                MasterFramework:AutoScalingDimension(1)
+                                        ),
                                         { backgroundColor },
-                                        MasterFramework:Dimension(5),
-                                        true
+                                        MasterFramework:AutoScalingDimension(5)
                                 )
                         ),
                         1700,
@@ -635,18 +615,21 @@ local function updateFactoryQuotas()
         local counterGroup = counterGroups[trackFactoryQuotasCounterGroup]
         counterGroup.counterDefinitions = {}
         for factoryID, factoryQuotas in pairs(FactoryQuotas.getQuotas()) do
-            for unitDefID, quota in pairs(factoryQuotas) do
-                if quota > 0 then
-                    table.insert(counterGroup.counterDefinitions, {
-                        id = "trackFactoryQuotasCounterGroup" .. factoryID .. unitDefID,
-                        alwaysVisible = true,
-                        teamWide = false,
-                        unitDefs = { unitDefID },
-                        counterType = COUNTER_TYPE_FACTORY_QUOTA,
-                        greenThreshold = quota,
-                        icon = unitDefID,
-                        factoryID = factoryID
-                    })
+            local isFactoryDead = Spring.GetUnitIsDead(factoryID)
+            if isFactoryDead ~= nil and not isFactoryDead then
+                for unitDefID, quota in pairs(factoryQuotas) do
+                    if quota > 0 then
+                        table.insert(counterGroup.counterDefinitions, {
+                            id = "trackFactoryQuotasCounterGroup" .. factoryID .. unitDefID,
+                            alwaysVisible = true,
+                            teamWide = false,
+                            unitDefs = { unitDefID },
+                            counterType = COUNTER_TYPE_FACTORY_QUOTA,
+                            greenThreshold = quota,
+                            icon = unitDefID,
+                            factoryID = factoryID
+                        })
+                    end
                 end
             end
         end
@@ -655,26 +638,24 @@ end
 
 local function onFrame()
     updateFactoryQuotas()
-    for _, counterGroup in pairs(counterGroups) do
-        counterGroup.contentStack.members = {}
-    end
-
     local playerId, teamIds = updateTeamIds()
 
     for counterGroupId, counterGroup in pairs(counterGroups) do
         local counterGroupIsVisible = false
+        local newMembers = {}
         for _, counterDef in ipairs(counterGroup.counterDefinitions) do
             if not counterDef.skipWhenSpectating or not spectatorMode then
                 local playerIdsToSearch = counterDef.teamWide and teamIds or playerId
                 local units = findUnits(playerIdsToSearch, counterDef.unitDefs)
                 counterDef.data = units
                 if hasData(counterDef) or counterDef.alwaysVisible or spectatorMode then
-                    table.insert(counterGroup.contentStack.members, counterType[counterDef.counterType](counterDef))
+                    table.insert(newMembers, counterType[counterDef.counterType](counterDef))
                     counterGroupIsVisible = true
                 end
                 callUpdate(counterDef)
             end
         end
+        counterGroup.contentStack:SetMembers(newMembers)
         if not counterGroupIsVisible then
             hideCounterGroup(counterGroup)
         else
@@ -697,6 +678,10 @@ local function getOptionValue(optionSpec)
     end
 end
 
+local function ContentStack(type)
+    return counterType[type](MasterFramework, {}, MasterFramework:AutoScalingDimension(0), 1)
+end
+
 local function applyOptions()
     if MasterFramework ~= nil then
         font = MasterFramework:Font("Exo2-SemiBold.otf", config.iconSize / 4)
@@ -711,7 +696,7 @@ local function applyOptions()
         counterGroups[trackFactoryQuotasCounterGroup] = {
             type = COUNTER_TYPE_HORIZONTAL,
             counterDefinitions = {},
-            contentStack = counterType[COUNTER_TYPE_HORIZONTAL](MasterFramework, {}, MasterFramework:Dimension(8), 1)
+            contentStack = ContentStack(COUNTER_TYPE_HORIZONTAL)
         }
     end
     countersCache = {}
@@ -779,7 +764,7 @@ function widget:Initialize()
         counterGroups[trackFactoryQuotasCounterGroup] = { type = COUNTER_TYPE_HORIZONTAL, counterDefinitions = {} }
     end
     for _, counterGroup in pairs(counterGroups) do
-        counterGroup.contentStack = counterType[counterGroup.type](MasterFramework, {}, MasterFramework:Dimension(8), 1)
+        counterGroup.contentStack = ContentStack(counterGroup.type)
     end
 end
 
