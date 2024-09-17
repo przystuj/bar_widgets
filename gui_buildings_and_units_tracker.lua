@@ -5,7 +5,7 @@ function widget:GetInfo()
         name = widgetName,
         desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units",
         author = "SuperKitowiec",
-        version = 0.12,
+        version = "0.12.1",
         license = "GNU GPL, v2 or later",
         layer = 0
     }
@@ -687,7 +687,7 @@ local function applyOptions()
         font = MasterFramework:Font("Exo2-SemiBold.otf", config.iconSize / 4)
     end
     if not isFactoryQuotasTrackerEnabled() then
-        if MasterFramework ~= nil then
+        if MasterFramework ~= nil and counterGroups[trackFactoryQuotasCounterGroup] then
             MasterFramework:RemoveElement(counterGroups[trackFactoryQuotasCounterGroup].key)
         end
         counterGroups[trackFactoryQuotasCounterGroup] = nil
