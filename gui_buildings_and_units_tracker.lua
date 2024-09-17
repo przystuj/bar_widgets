@@ -5,7 +5,7 @@ function widget:GetInfo()
         name = widgetName,
         desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units",
         author = "SuperKitowiec",
-        version = "0.12.1",
+        version = "0.13",
         license = "GNU GPL, v2 or later",
         layer = 0
     }
@@ -24,6 +24,7 @@ counterType = COUNTER_TYPE_BASIC or COUNTER_TYPE_STOCKPILE. Basic is just a numb
 greenThreshold (optional, only for COUNTER_TYPE_BASIC) = if counter is below greenThreshold the text is yellow. If it's above, the text is green.
 skipWhenSpectating = counter won't be shown when spectating
 icon = specify which unit icon should be displayed. For example icon = "armack"
+isGrouped = if true then each entry from unitNames will be displayed as a separate tracker
 ]]
 local COUNTER_TYPE_BASIC, COUNTER_TYPE_STOCKPILE = "basic", "stockpile"
 local COUNTER_TYPE_HORIZONTAL, COUNTER_TYPE_VERTICAL = "horizontal", "vertical"
@@ -55,175 +56,57 @@ local counterGroups = {
             },
         }
     },
-    air = {
+    airUnits = {
         type = COUNTER_TYPE_HORIZONTAL,
         counterDefinitions = {
             {
-                id = "airt1cons",
+                id = "airUnits",
                 alwaysVisible = false,
                 teamWide = false,
-                unitNames = { armca = true, corca = true, corcsa = true, armcsa = true },
+                unitNames = { armca = true, corca = true, corcsa = true, armcsa = true, armaca = true, coraca = true,
+                              armatlas = true, armdfly = true, corvalk = true, corseah = true, armpeep = true,
+                              armsehak = true, armawac = true, corfink = true, corhunt = true },
                 counterType = COUNTER_TYPE_BASIC,
                 skipWhenSpectating = true,
+                isGrouped = true,
             },
-            {
-                id = "airt2cons",
-                alwaysVisible = false,
-                teamWide = false,
-                unitNames = { armaca = true, coraca = true },
-                counterType = COUNTER_TYPE_BASIC,
-                skipWhenSpectating = true,
-            },
-            {
-                id = "transports",
-                alwaysVisible = false,
-                teamWide = false,
-                unitNames = { armatlas = true, armdfly = true, corvalk = true, corseah = true, },
-                counterType = COUNTER_TYPE_BASIC,
-                skipWhenSpectating = true,
-            },
-            {
-                id = "air scouts",
-                alwaysVisible = false,
-                teamWide = false,
-                unitNames = { armpeep = true, armsehak = true, armawac = true, corfink = true, corhunt = true },
-                counterType = COUNTER_TYPE_BASIC,
-                skipWhenSpectating = true,
-            }
         }
     },
     groundCons = {
         type = COUNTER_TYPE_HORIZONTAL,
         counterDefinitions = {
             {
-                id = "t1cons",
+                id = "groundCons",
                 alwaysVisible = false,
                 teamWide = false,
                 unitNames = {
-                    armck = true,
-                    corck = true,
-                    armcv = true,
-                    corcv = true,
-                    cormuskrat = true,
-                    armbeaver = true,
-                    armcs = true,
-                    corcs = true,
-                    corch = true,
-                    armch = true
-                },
+                    armck = true, corck = true, armcv = true, corcv = true, cormuskrat = true, armbeaver = true,
+                    armcs = true, corcs = true, corch = true, armch = true, armack = true, corack = true,
+                    armacv = true, coracv = true, armacsub = true, coracsub = true, armfark = true, armconsul = true,
+                    corfast = true, armrectr = true, cornecro = true, },
                 counterType = COUNTER_TYPE_BASIC,
                 skipWhenSpectating = true,
-                icon = "armck"
+                isGrouped = true,
             },
-            {
-                id = "t2cons",
-                alwaysVisible = false,
-                teamWide = false,
-                unitNames = { armack = true, corack = true, armacv = true, coracv = true, armacsub = true, coracsub = true },
-                counterType = COUNTER_TYPE_BASIC,
-                skipWhenSpectating = true,
-                icon = "armack"
-            },
-            {
-                id = "engineers",
-                alwaysVisible = false,
-                teamWide = false,
-                unitNames = { armfark = true, armconsul = true, corfast = true },
-                counterType = COUNTER_TYPE_BASIC,
-                skipWhenSpectating = true,
-                icon = "corfast"
-            },
-            {
-                id = "resbots",
-                alwaysVisible = false,
-                teamWide = false,
-                unitNames = { armrectr = true, cornecro = true, },
-                counterType = COUNTER_TYPE_BASIC,
-                skipWhenSpectating = true,
-                icon = "armrectr"
-            }
         }
     },
     labs = {
         type = COUNTER_TYPE_HORIZONTAL,
         counterDefinitions = {
             {
-                id = "t1labs",
+                id = "labs",
                 alwaysVisible = false,
                 teamWide = false,
                 unitNames = {
-                    armsy = true,
-                    armlab = true,
-                    armvp = true,
-                    armap = true,
-                    armfhp = true,
-                    armhp = true,
-                    armamsub = true,
-                    armplat = true,
-                    corsy = true,
-                    corlab = true,
-                    corvp = true,
-                    corap = true,
-                    corfhp = true,
-                    corhp = true,
-                    coramsub = true,
-                    corplat = true,
-                },
+                    armsy = true, armlab = true, armvp = true, armap = true, armfhp = true, armhp = true,
+                    armamsub = true, armplat = true, corsy = true, corlab = true, corvp = true, corap = true,
+                    corfhp = true, corhp = true, coramsub = true, corplat = true, armalab = true, armavp = true,
+                    armaap = true, armfhp = true, armasy = true, coravp = true, coralab = true, corasy = true,
+                    coraap = true, armshltxuw = true, armshltx = true, corgant = true, corgantuw = true },
                 counterType = COUNTER_TYPE_BASIC,
                 skipWhenSpectating = true,
-                icon = "armlab"
+                isGrouped = true,
             },
-            {
-                id = "t2labs",
-                alwaysVisible = false,
-                teamWide = false,
-                unitNames = {
-                    armalab = true,
-                    armavp = true,
-                    armaap = true,
-                    armfhp = true,
-                    armasy = true,
-                    coravp = true,
-                    coralab = true,
-                    corasy = true,
-                    coraap = true,
-                },
-                counterType = COUNTER_TYPE_BASIC,
-                skipWhenSpectating = true,
-                icon = "armalab"
-            },
-            {
-                id = "t3labs",
-                alwaysVisible = false,
-                teamWide = false,
-                unitNames = { armshltxuw = true, armshltx = true, corgant = true, corgantuw = true },
-                counterType = COUNTER_TYPE_BASIC,
-                skipWhenSpectating = true,
-                icon = "armshltx"
-            }
-        }
-    },
-    special = {
-        type = COUNTER_TYPE_HORIZONTAL,
-        counterDefinitions = {
-            {
-                id = "spies",
-                alwaysVisible = false,
-                teamWide = false,
-                unitNames = { armspy = true, corspy = true },
-                counterType = COUNTER_TYPE_BASIC,
-                skipWhenSpectating = true,
-                icon = "armspy"
-            },
-            {
-                id = "skuttles",
-                alwaysVisible = false,
-                teamWide = false,
-                unitNames = { corsktl = true },
-                counterType = COUNTER_TYPE_BASIC,
-                skipWhenSpectating = true,
-                icon = "corsktl"
-            }
         }
     },
 }
@@ -264,6 +147,14 @@ local OPTION_SPECS = {
     }
 }
 
+local counterGroupsConfig
+local configFile = loadfile("LuaUI/config/BuildingsAndUnitsTracker.lua")
+if configFile then
+    local tmp = {}
+    setfenv(configFile, tmp)
+    counterGroupsConfig = configFile()
+end
+
 local requiredFrameworkVersion = 43
 local countersCache, font, MasterFramework, FactoryQuotas
 local red, green, yellow, white, backgroundColor, lightBlack
@@ -272,6 +163,26 @@ local trackFactoryQuotasCounterGroup = "trackFactoryQuotasCounterGroup"
 local COUNTER_TYPE_FACTORY_QUOTA = "counterQuota"
 
 -- Functions
+local function deepCopy(obj, seen)
+    if type(obj) ~= "table" then
+        return obj
+    end
+
+    if seen and seen[obj] then
+        return seen[obj]
+    end
+
+    local copy = {}
+    seen = seen or {}
+    seen[obj] = copy
+
+    for k, v in pairs(obj) do
+        copy[deepCopy(k, seen)] = deepCopy(v, seen)
+    end
+
+    return setmetatable(copy, getmetatable(obj))
+end
+
 local function findUnits(teamIDs, unitDefIDs)
     return table.reduce(teamIDs, function(acc, teamID)
         table.append(acc, Spring.GetTeamUnitsByDefs(teamID, unitDefIDs))
@@ -537,6 +448,27 @@ local counterType = {
     [COUNTER_TYPE_FACTORY_QUOTA] = FactoryQuotaCounter,
 }
 
+local function spreadGroupedUnitDefs()
+    for _, counterGroup in pairs(counterGroups) do
+        local indicesToRemove = {}
+        for index, counterDefTemplate in ipairs(counterGroup.counterDefinitions) do
+            if counterDefTemplate.isGrouped then
+                table.insert(indicesToRemove, index)
+                for unitName, _ in pairs(counterDefTemplate.unitNames) do
+                    local counterDef = deepCopy(counterDefTemplate)
+                    counterDef.id = counterDefTemplate.id .. unitName
+                    counterDef.isGrouped = false
+                    counterDef.unitNames = { [unitName] = true }
+                    table.insert(counterGroup.counterDefinitions, counterDef)
+                end
+            end
+        end
+        for _, index in pairs(indicesToRemove) do
+            table.remove(counterGroup.counterDefinitions, index)
+        end
+    end
+end
+
 local function initUnitDefs()
     for unitDefID, unitDef in pairs(UnitDefs) do
         for _, counterGroup in pairs(counterGroups) do
@@ -741,10 +673,15 @@ function widget:Initialize()
         error("[WidgetName] Error: MasterFramework " .. requiredFrameworkVersion .. " not found! Removing self.")
     end
 
+    if counterGroupsConfig then
+        counterGroups = counterGroupsConfig
+    end
+
     if WG['options'] ~= nil then
         WG['options'].addOptions(table.map(OPTION_SPECS, createOptionFromSpec))
     end
 
+    spreadGroupedUnitDefs()
     initUnitDefs()
     counterType[COUNTER_TYPE_HORIZONTAL] = MasterFramework.HorizontalStack
     counterType[COUNTER_TYPE_VERTICAL] = MasterFramework.VerticalStack
