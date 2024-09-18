@@ -1,5 +1,5 @@
 --[[
-Each counterGroup is a separate draggable window with its own counterDefinitions.
+Each counterGroup is a separate draggable window with its own counterDefinitions.counterDefinitions.counterDefinitions.
 You can add own groups and definitions, just make sure that their ids are unique. You can make each group vertical or horizontal
 
 Counter definition params:
@@ -97,5 +97,28 @@ return {
                 isGrouped = true,
             },
         }
-    }
+    },
+    special = {
+        type = COUNTER_TYPE_HORIZONTAL,
+        counterDefinitions = {
+            {
+                id = "spies",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { armspy = true, corspy = true },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+                icon = "armspy"
+            },
+            {
+                id = "skuttles",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { corsktl = true },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+                icon = "corsktl"
+            }
+        }
+    },
 }

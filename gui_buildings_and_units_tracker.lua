@@ -5,7 +5,7 @@ function widget:GetInfo()
         name = widgetName,
         desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units",
         author = "SuperKitowiec",
-        version = "0.13",
+        version = "0.13.1",
         license = "GNU GPL, v2 or later",
         layer = 0
     }
@@ -626,6 +626,7 @@ local function applyOptions()
     end
     if isFactoryQuotasTrackerEnabled() and MasterFramework ~= nil then
         counterGroups[trackFactoryQuotasCounterGroup] = {
+            key = widgetName .. trackFactoryQuotasCounterGroup,
             type = COUNTER_TYPE_HORIZONTAL,
             counterDefinitions = {},
             contentStack = ContentStack(COUNTER_TYPE_HORIZONTAL)
@@ -698,7 +699,11 @@ function widget:Initialize()
     font = MasterFramework:Font("Exo2-SemiBold.otf", config.iconSize / 4)
 
     if isFactoryQuotasTrackerEnabled() then
-        counterGroups[trackFactoryQuotasCounterGroup] = { type = COUNTER_TYPE_HORIZONTAL, counterDefinitions = {} }
+        counterGroups[trackFactoryQuotasCounterGroup] = {
+            type = COUNTER_TYPE_HORIZONTAL,
+            counterDefinitions = {},
+            key = widgetName .. trackFactoryQuotasCounterGroup,
+        }
     end
     for _, counterGroup in pairs(counterGroups) do
         counterGroup.contentStack = ContentStack(counterGroup.type)
