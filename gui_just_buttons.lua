@@ -9,7 +9,7 @@ function widget:GetInfo()
         name = widgetName,
         desc = "Buttons to easily add units and stuff",
         author = "SuperKitowiec",
-        version = 0.1,
+        version = 0.2,
         license = "GNU GPL, v2 or later",
         handler = true,
         layer = 0
@@ -19,6 +19,11 @@ end
 local requiredFrameworkVersion = 43
 local font, MasterFramework, key
 local white, lightBlack
+
+local rowActions = {
+    { "give 20 armrectr", "give 4 cortitan", "give armatlas" },
+    { "pause" }
+}
 
 local function TextWithBackground(text)
     return MasterFramework:Background(
@@ -53,6 +58,15 @@ end
 
 local gf = Spring.GetGameFrame()
 
+local function Row(actions)
+    local content = {}
+    for _, action in ipairs(actions) do
+        table.insert(content, ActionButton(action))
+    end
+
+    return MasterFramework:HorizontalStack(content, MasterFramework:AutoScalingDimension(1), 1)
+end
+
 function widget:Initialize()
     MasterFramework = WG["MasterFramework " .. requiredFrameworkVersion]
     if not MasterFramework then
@@ -63,17 +77,12 @@ function widget:Initialize()
     white = MasterFramework:Color(0.92, 0.92, 0.92, 1)
     font = MasterFramework:Font("Exo2-SemiBold.otf", 20)
 
-    local contentStack = MasterFramework:VerticalStack({
-        MasterFramework:HorizontalStack({
-            ActionButton("give 20 armrectr"),
-            ActionButton("give 4 cortitan"),
-            ActionButton("give armatlas"),
-        }, MasterFramework:AutoScalingDimension(1), 1),
-        MasterFramework:HorizontalStack({
-            ActionButton("pause"),
-        }, MasterFramework:AutoScalingDimension(1), 1),
-    }, MasterFramework:AutoScalingDimension(1), 1)
+    local rows = {}
+    for _, row in ipairs(rowActions) do
+        table.insert(rows, Row(row))
+    end
 
+    local contentStack = MasterFramework:VerticalStack(rows, MasterFramework:AutoScalingDimension(1), 1)
     local frameId = widgetName .. "frameId"
 
     key = MasterFramework:InsertElement(
