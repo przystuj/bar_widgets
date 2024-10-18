@@ -54,7 +54,7 @@ return {
                 teamWide = false,
                 unitNames = { armca = true, corca = true, corcsa = true, armcsa = true, armaca = true, coraca = true,
                               armatlas = true, armdfly = true, corvalk = true, corseah = true, armpeep = true,
-                              armsehak = true, armawac = true, corfink = true, corhunt = true },
+                              armsehak = true, armawac = true, corfink = true, corhunt = true, legatrans = true, corhvytrans = true, armhvytrans = true, leghvytrans = true },
                 counterType = COUNTER_TYPE_BASIC,
                 skipWhenSpectating = true,
                 isGrouped = true,

@@ -5,7 +5,7 @@ function widget:GetInfo()
         name = widgetName,
         desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units",
         author = "SuperKitowiec",
-        version = "0.13.1",
+        version = "0.13.2",
         license = "GNU GPL, v2 or later",
         layer = 0
     }
@@ -535,7 +535,9 @@ local function displayCounterGroup(counterGroupId, counterGroup)
 end
 
 local function hideCounterGroup(counterGroup)
-    MasterFramework:RemoveElement(counterGroup.key)
+	if counterGroup.key ~= nil then
+		MasterFramework:RemoveElement(counterGroup.key)
+	end
 end
 
 local function isFactoryQuotasTrackerEnabled()
@@ -552,7 +554,7 @@ local function updateFactoryQuotas()
                 for unitDefID, quota in pairs(factoryQuotas) do
                     if quota > 0 then
                         table.insert(counterGroup.counterDefinitions, {
-                            id = "trackFactoryQuotasCounterGroup" .. factoryID .. unitDefID,
+                            id = trackFactoryQuotasCounterGroup .. factoryID .. unitDefID,
                             alwaysVisible = true,
                             teamWide = false,
                             unitDefs = { unitDefID },
@@ -718,7 +720,9 @@ end
 
 function widget:Shutdown()
     for _, counterGroup in pairs(counterGroups) do
-        MasterFramework:RemoveElement(counterGroup.key)
+		if counterGroup.key ~= nil then
+			MasterFramework:RemoveElement(counterGroup.key)
+		end
     end
 
     if WG['options'] ~= nil then
