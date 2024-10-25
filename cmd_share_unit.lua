@@ -5,9 +5,10 @@ function widget:GetInfo()
         author = "Stolen by SuperKitowiec from citrine",
         date = "2024",
         license = "GNU GPL, v2 or later",
-        version = 1,
+        version = 2,
         layer = 0,
         enabled = true,
+        handler = true,
     }
 end
 
@@ -21,10 +22,10 @@ local SpringGetUnitTeam = Spring.GetUnitTeam
 local SpringGetSelectedUnits = Spring.GetSelectedUnits
 local SpringGetTeamAllyTeamID = Spring.GetTeamAllyTeamID
 local SpringShareResources = Spring.ShareResources
-local SpringGiveOrderToUnitArray = Spring.GiveOrderToUnitArray
-local SpringSelectUnitArray = Spring.SelectUnitArray
 local SpringI18N = Spring.I18N
 local SpringGetSpectatingState = Spring.GetSpectatingState
+local SpringWorldToScreenCoords = Spring.WorldToScreenCoords
+local SpringPlaySoundFile = Spring.PlaySoundFile
 
 local function dump(o)
     if type(o) == 'table' then
@@ -49,87 +50,24 @@ local function tablelength(T)
     return count
 end
 
--- widget code
--- ===========
--- the command that a user can execute, params = { targetUnitID }
---local CMD_SHARE_UNIT_TO_TARGET = 455624
---local CMD_SHARE_UNIT_TO_TARGET_DEFINITION = {
---    id = CMD_SHARE_UNIT_TO_TARGET,
---    type = CMDTYPE.ICON_UNIT,
---    name = 'Share Unit To Target',
---    cursor = 'settarget',
---    action = 'shareunittotarget',
---}
+local CMD_SHARE_UNIT_TO_TARGET = 455624
+local CMD_SHARE_UNIT_TO_TARGET_DEFINITION = {
+    id = CMD_SHARE_UNIT_TO_TARGET,
+    type = CMDTYPE.ICON_UNIT_OR_MAP,
+    name = 'Share Unit To Target',
+    cursor = 'settarget',
+    action = 'quick_share_to_target',
+}
 
 local myTeamID = SpringGetMyTeamID()
 local myAllyTeamID = SpringGetTeamAllyTeamID(myTeamID)
 
---function widget:CommandsChanged()
---    if SpringGetSpectatingState() then
---        return
---    end
---
---    local selectedUnits = SpringGetSelectedUnits()
---    if #selectedUnits > 0 then
---        local customCommands = widgetHandler.customCommands
---        customCommands[#customCommands + 1] = CMD_SHARE_UNIT_TO_TARGET_DEFINITION
---    end
---end
---
---function widget:UnitCmdDone(unitID, unitDefID, unitTeam, cmdID, cmdParams, cmdOpts, cmdTag)
---    if cmdID == CMD_SHARE_UNIT_TO_TARGET then
---        if #cmdParams < 1 then
---            return true
---        end
---        local targetUnitID = cmdParams[1]
---        local targetTeamID = SpringGetUnitTeam(targetUnitID)
---
---        if targetTeamID == myTeamID or SpringGetTeamAllyTeamID(targetTeamID) ~= myAllyTeamID then
---            -- invalid target, don't do anything
---            return true
---        end
---
---        SpringShareResources(targetTeamID, "units")
---        Spring.PlaySoundFile("beep4", 1, 'ui')
---        return false
---    end
---end
-
---function widget:CommandNotify(cmdID, cmdParams, cmdOpts)
---    if cmdID == CMD_SHARE_UNIT_TO_TARGET then
---        if #cmdParams < 1 then
---            return true
---        end
---        local targetUnitID = cmdParams[1]
---        local targetTeamID = SpringGetUnitTeam(targetUnitID)
---
---        if targetTeamID == myTeamID or SpringGetTeamAllyTeamID(targetTeamID) ~= myAllyTeamID then
---            -- invalid target, don't do anything
---            return true
---        end
---
---        SpringShareResources(targetTeamID, "units")
---        Spring.PlaySoundFile("beep4", 1, 'ui')
---        return false
---    end
---end
-
-local function ShareUnit()
-    local selectedUnits = SpringGetSelectedUnits()
-    if #selectedUnits < 1 then
-        return
-    end
-
-    local mx, my, _, mmb, _, mouseOffScreen, cameraPanMode = SpringGetMouseState()
-    if mouseOffScreen or mmb or cameraPanMode then
-        return
-    end
-
+local function FindTeam(mx, my)
     local _, cUnitID = SpringTraceScreenRay(mx, my, true)
     local foundUnits = SpringGetUnitsInCylinder(cUnitID[1], cUnitID[3], 200)
 
     if #foundUnits < 1 then
-        return
+        return nil
     end
 
     local unitTeamCounters = {}
@@ -147,7 +85,7 @@ local function ShareUnit()
     end
 
     if tablelength(unitTeamCounters) < 1 then
-        return
+        return nil
     end
 
     local selectedTeam
@@ -158,17 +96,69 @@ local function ShareUnit()
             selectedTeam = unitTeamId
         end
     end
+    return selectedTeam
+end
 
+function widget:CommandNotify(cmdID, cmdParams, cmdOpts)
+    if cmdID == CMD_SHARE_UNIT_TO_TARGET then
+        local targetTeamID = nil
+        if #cmdParams ~= 1 and #cmdParams ~= 3  then
+            return true
+        elseif #cmdParams == 1 then
+            -- click on unit
+            local targetUnitID = cmdParams[1]
+            targetTeamID = SpringGetUnitTeam(targetUnitID)
+        elseif #cmdParams == 3 then
+            -- click on the ground
+            local mouseX, mouseY = SpringWorldToScreenCoords(cmdParams[1], cmdParams[2], cmdParams[3])
+            targetTeamID = FindTeam(mouseX, mouseY)
+        end
+
+        if targetTeamID == nil or targetTeamID == myTeamID or SpringGetTeamAllyTeamID(targetTeamID) ~= myAllyTeamID then
+            -- invalid target, don't do anything
+            return true
+        end
+
+        SpringShareResources(targetTeamID, "units")
+        SpringPlaySoundFile("beep4", 1, 'ui')
+        return false
+    end
+end
+
+local function QuickShareUnit()
+    local selectedUnits = SpringGetSelectedUnits()
+    if #selectedUnits < 1 then
+        return
+    end
+
+    local mx, my, _, mmb, _, mouseOffScreen, cameraPanMode = SpringGetMouseState()
+    if mouseOffScreen or mmb or cameraPanMode then
+        return
+    end
+
+    local selectedTeam = FindTeam(mx, my)
     SpringShareResources(selectedTeam, "units")
-    Spring.PlaySoundFile("beep4", 1, 'ui')
+    SpringPlaySoundFile("beep4", 1, 'ui')
+end
+
+function widget:CommandsChanged()
+    if SpringGetSpectatingState() then
+        return
+    end
+
+    local selectedUnits = SpringGetSelectedUnits()
+    if #selectedUnits > 0 then
+        local customCommands = widgetHandler.customCommands
+        customCommands[#customCommands + 1] = CMD_SHARE_UNIT_TO_TARGET_DEFINITION
+    end
 end
 
 function widget:Initialize()
-    widgetHandler:AddAction("shareunittotarget", ShareUnit, nil, 'p')
-    --SpringI18N.load({
-    --    en = {
-    --        ["ui.orderMenu.shareunittotarget"] = "Share Unit",
-    --        ["ui.orderMenu.shareunittotarget_tooltip"] = "Share unit to target player.",
-    --    }
-    --})
+    widgetHandler.actionHandler:AddAction(self, "quick_share_near_cursor", QuickShareUnit, nil, 'p')
+    SpringI18N.load({
+        en = {
+            ["ui.orderMenu.quick_share_to_target"] = "Share Unit",
+            ["ui.orderMenu.quick_share_to_target_tooltip"] = "Share unit to target player.",
+        }
+    })
 end
