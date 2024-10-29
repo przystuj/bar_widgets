@@ -5,7 +5,7 @@ function widget:GetInfo()
         name = widgetName,
         desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units",
         author = "SuperKitowiec",
-        version = "0.13.2",
+        version = "0.13.3",
         license = "GNU GPL, v2 or later",
         layer = 0
     }
@@ -350,7 +350,6 @@ local function FactoryQuotaCounter(counterDef)
                 end
                 local newAmount = math.max(minValue, quotas[factoryID][unitDefID] + (value * multiplier))
                 quotas[factoryID][unitDefID] = newAmount
-                FactoryQuotas.update(quotas)
             end)
 
     function counter:update(counterDef)
