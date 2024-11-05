@@ -5,7 +5,7 @@ function widget:GetInfo()
         name = widgetName,
         desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units",
         author = "SuperKitowiec",
-        version = "0.13.3",
+        version = "0.13.4",
         license = "GNU GPL, v2 or later",
         layer = 0
     }
@@ -534,9 +534,9 @@ local function displayCounterGroup(counterGroupId, counterGroup)
 end
 
 local function hideCounterGroup(counterGroup)
-	if counterGroup.key ~= nil then
-		MasterFramework:RemoveElement(counterGroup.key)
-	end
+    if counterGroup.key ~= nil then
+        MasterFramework:RemoveElement(counterGroup.key)
+    end
 end
 
 local function isFactoryQuotasTrackerEnabled()
@@ -699,13 +699,11 @@ function widget:Initialize()
     white = MasterFramework:Color(0.92, 0.92, 0.92, 1)
     font = MasterFramework:Font("Exo2-SemiBold.otf", config.iconSize / 4)
 
-    if isFactoryQuotasTrackerEnabled() then
-        counterGroups[trackFactoryQuotasCounterGroup] = {
-            type = COUNTER_TYPE_HORIZONTAL,
-            counterDefinitions = {},
-            key = widgetName .. trackFactoryQuotasCounterGroup,
-        }
-    end
+    counterGroups[trackFactoryQuotasCounterGroup] = {
+        type = COUNTER_TYPE_HORIZONTAL,
+        counterDefinitions = {},
+        key = widgetName .. trackFactoryQuotasCounterGroup,
+    }
     for _, counterGroup in pairs(counterGroups) do
         counterGroup.contentStack = ContentStack(counterGroup.type)
     end
@@ -719,9 +717,9 @@ end
 
 function widget:Shutdown()
     for _, counterGroup in pairs(counterGroups) do
-		if counterGroup.key ~= nil then
-			MasterFramework:RemoveElement(counterGroup.key)
-		end
+        if counterGroup.key ~= nil then
+            MasterFramework:RemoveElement(counterGroup.key)
+        end
     end
 
     if WG['options'] ~= nil then
