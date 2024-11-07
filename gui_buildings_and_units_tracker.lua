@@ -5,9 +5,9 @@ function widget:GetInfo()
         name = widgetName,
         desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units",
         author = "SuperKitowiec",
-        version = "0.13.4",
+        version = "0.13.5",
         license = "GNU GPL, v2 or later",
-        layer = 0
+        layer = 1 -- has to be higher than unit_factory_quota.lua
     }
 end
 
@@ -544,6 +544,9 @@ local function isFactoryQuotasTrackerEnabled()
 end
 
 local function updateFactoryQuotas()
+    if not FactoryQuotas then
+        Spring.Echo("FactoryQuotas not found on updateFactoryQuotas")
+    end
     if isFactoryQuotasTrackerEnabled() then
         local counterGroup = counterGroups[trackFactoryQuotasCounterGroup]
         counterGroup.counterDefinitions = {}
@@ -669,10 +672,13 @@ local function createOptionFromSpec(optionSpec)
 end
 
 function widget:Initialize()
-    MasterFramework = WG["MasterFramework " .. requiredFrameworkVersion]
     FactoryQuotas = WG.Quotas
+    MasterFramework = WG["MasterFramework " .. requiredFrameworkVersion]
     if not MasterFramework then
         error("[WidgetName] Error: MasterFramework " .. requiredFrameworkVersion .. " not found! Removing self.")
+    end
+    if not FactoryQuotas then
+        Spring.Echo("FactoryQuotas not found on init")
     end
 
     if counterGroupsConfig then
