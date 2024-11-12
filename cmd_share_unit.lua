@@ -5,7 +5,7 @@ function widget:GetInfo()
         author = "SuperKitowiec",
         date = "2024",
         license = "GNU GPL, v2 or later",
-        version = 3,
+        version = 3.1,
         layer = 0,
         enabled = true,
         handler = true,
@@ -140,7 +140,8 @@ local function GetMouseTargetPosition()
         if mouseTargetType == "ground" then
             return mouseTarget[1], mouseTarget[2], mouseTarget[3]
         elseif mouseTargetType == "unit" then
-            return GetUnitPosition(mouseTarget)
+            local mx, my, mz = GetUnitPosition(mouseTarget)
+            return mx, my, mz, mouseTarget
         elseif mouseTargetType == "feature" then
             local _, mouseTarget = TraceScreenRay(mx, my, true)
             if mouseTarget then
@@ -194,7 +195,7 @@ end
 local function GetMouseDistance()
     local cx, cy, cz = GetCameraPosition()
     local mx, my, mz = GetMouseTargetPosition()
-    if not mx then
+    if not mz then
         return nil
     end
     local dx = cx - mx
@@ -204,22 +205,28 @@ local function GetMouseDistance()
 end
 
 function widget:DrawWorld()
-
     local _, cmd, _ = GetActiveCommand()
 
     if cmd ~= CMD_SHARE_UNIT_TO_TARGET then
         return
     end
 
-    local tx, ty, tz = GetMouseTargetPosition()
+    local tx, ty, tz, targetUnitID = GetMouseTargetPosition()
+
     if (not tx) then
         return
     end
 
     mouseDistance = GetMouseDistance() or 1000
+    local selectedTeam
+    if targetUnitID then
+        selectedTeam = GetUnitTeam(targetUnitID)
+    else
+        local mouseX, mouseY = WorldToScreenCoords(tx, ty, tz)
+        selectedTeam = FindTeam(mouseX, mouseY)
+    end
 
-    local mouseX, mouseY = WorldToScreenCoords(tx, ty, tz)
-    local selectedTeam = FindTeam(mouseX, mouseY)
+
     local selectedColor = aoeColor
     if selectedTeam then
         local tred, tgreen, tblue = GetTeamColor(selectedTeam)
