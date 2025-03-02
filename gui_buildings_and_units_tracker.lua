@@ -3,11 +3,12 @@ local widgetName = "Buildings/Units Tracker"
 function widget:GetInfo()
     return {
         name = widgetName,
-        desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units",
+        desc = "Shows counters for chosen units/buildings. Pinpointers, nukes and junos are displayed by default. Click icon to select one, shift click to select all. Edit counterGroups to add counters for different units. Select unit and toggle Track to track its health",
         author = "SuperKitowiec",
-        version = "0.13.5",
+        version = "0.14",
         license = "GNU GPL, v2 or later",
-        layer = 1 -- has to be higher than unit_factory_quota.lua
+        layer = 1, -- has to be higher than unit_factory_quota.lua
+        handler = true
     }
 end
 
@@ -147,6 +148,8 @@ local OPTION_SPECS = {
     }
 }
 
+local CMD_TOGGLE_UNIT_TRACKING = 455625
+
 local counterGroupsConfig
 local configFile = loadfile("LuaUI/config/BuildingsAndUnitsTracker.lua")
 if configFile then
@@ -160,7 +163,9 @@ local countersCache, font, MasterFramework, FactoryQuotas
 local red, green, yellow, white, backgroundColor, lightBlack
 local spectatorMode
 local trackFactoryQuotasCounterGroup = "trackFactoryQuotasCounterGroup"
-local COUNTER_TYPE_FACTORY_QUOTA = "counterQuota"
+local trackedUnitIds = {}
+local trackUnitCounterGroup = "trackUnitCounterGroup"
+local COUNTER_TYPE_FACTORY_QUOTA, COUNTER_TYPE_HEALTH = "counterQuota", "counterHealth"
 
 -- Functions
 local function deepCopy(obj, seen)
@@ -441,10 +446,66 @@ local function UnitWithStockpileCounter(counterDef)
     return counter
 end
 
+local function UnitHealthCounter(counterDef)
+    if countersCache[counterDef.id] then
+        return countersCache[counterDef.id]
+    end
+
+    local currentColor = MasterFramework:Color(1, 1, 1, 1)
+    local counterText = MasterFramework:Text("", currentColor, font)
+    local buttonParams = {
+        unitsToSelect = {},
+        currentSelectedUnitIndex = 0
+    }
+
+    local counter = TrackerButton(buttonParams,
+            MasterFramework:StackInPlace({ UnitIcon(counterDef), TextWithBackground(counterText) }, 0.975, 0.025)
+    )
+
+    function counter:update(counterDef)
+        buttonParams.unitsToSelect = { counterDef.unitId }
+        local unitId = counterDef.unitId
+        local unitHealth = 0
+        local unitMaxHealth = 0
+
+        if Spring.ValidUnitID(unitId) then
+            -- Get current and max health
+            unitHealth, unitMaxHealth = Spring.GetUnitHealth(unitId)
+        end
+
+        if not unitHealth or not unitMaxHealth or unitMaxHealth == 0 then
+            -- Unit data couldn't be retrieved or unit is invalid
+            counterText:SetString("N/A")
+            counterText:SetBaseColor(red)
+            return
+        end
+
+        -- Calculate health percentage
+        local healthPercent = math.floor((unitHealth / unitMaxHealth) * 100)
+
+        -- Determine color based on health percentage
+        local newColor
+        if healthPercent < 25 then
+            newColor = red
+        elseif healthPercent < counterDef.greenThreshold then
+            newColor = yellow
+        else
+            newColor = green
+        end
+
+        counterText:SetString(string.format("%d%%", healthPercent))
+        counterText:SetBaseColor(newColor)
+    end
+
+    countersCache[counterDef.id] = counter
+    return counter
+end
+
 local counterType = {
     [COUNTER_TYPE_BASIC] = UnitCounter,
     [COUNTER_TYPE_STOCKPILE] = UnitWithStockpileCounter,
     [COUNTER_TYPE_FACTORY_QUOTA] = FactoryQuotaCounter,
+    [COUNTER_TYPE_HEALTH] = UnitHealthCounter,
 }
 
 local function spreadGroupedUnitDefs()
@@ -572,8 +633,45 @@ local function updateFactoryQuotas()
     end
 end
 
+local function updateHealthTrackers()
+    local counterGroup = counterGroups[trackUnitCounterGroup]
+    counterGroup.counterDefinitions = {}
+
+    if #trackedUnitIds == 0 then
+        return
+    end
+
+    for _, unitId in ipairs(trackedUnitIds) do
+        local isUnitDead = Spring.GetUnitIsDead(unitId)
+
+        if isUnitDead ~= nil and not isUnitDead then
+            local unitDefID = Spring.GetUnitDefID(unitId)
+            if unitDefID then
+                table.insert(counterGroup.counterDefinitions, {
+                    id = trackUnitCounterGroup .. unitId,
+                    alwaysVisible = true,
+                    teamWide = false,
+                    unitDefs = { },
+                    counterType = COUNTER_TYPE_HEALTH,
+                    greenThreshold = 75,
+                    icon = unitDefID,
+                    unitId = unitId,
+                })
+            end
+        else
+            for i, trackedId in ipairs(trackedUnitIds) do
+                if trackedId == unitId then
+                    table.remove(trackedUnitIds, i)
+                    break
+                end
+            end
+        end
+    end
+end
+
 local function onFrame()
     updateFactoryQuotas()
+    updateHealthTrackers()
     local playerId, teamIds = updateTeamIds()
 
     for counterGroupId, counterGroup in pairs(counterGroups) do
@@ -710,9 +808,23 @@ function widget:Initialize()
         counterDefinitions = {},
         key = widgetName .. trackFactoryQuotasCounterGroup,
     }
+    counterGroups[trackUnitCounterGroup] = {
+        type = COUNTER_TYPE_HORIZONTAL,
+        counterDefinitions = {},
+        key = widgetName .. trackUnitCounterGroup,
+    }
     for _, counterGroup in pairs(counterGroups) do
         counterGroup.contentStack = ContentStack(counterGroup.type)
     end
+
+    Spring.I18N.load({
+        en = {
+            ["ui.orderMenu.toggle_unit_tracking"] = "Track",
+            ["ui.orderMenu.toggle_unit_tracking_tooltip"] = "Adds a tracker for this unit.",
+            ["ui.orderMenu.toggle_unit_tracking_disabled"] = "Not tracked",
+            ["ui.orderMenu.toggle_unit_tracking_enabled"] = "Tracked",
+        }
+    })
 end
 
 function widget:GameFrame(frame)
@@ -747,5 +859,81 @@ function widget:SetConfigData(data)
         if data[configVariable] ~= nil then
             setOptionValue(option, data[configVariable])
         end
+    end
+end
+
+local function addUnitToTracking(unitId)
+    if not Spring.ValidUnitID(unitId) then
+        return false
+    end
+
+    for _, trackedId in ipairs(trackedUnitIds) do
+        if trackedId == unitId then
+            return false
+        end
+    end
+
+    table.insert(trackedUnitIds, unitId)
+    return true
+end
+
+local function removeUnitFromTracking(unitId)
+    for i, trackedId in ipairs(trackedUnitIds) do
+        if trackedId == unitId then
+            table.remove(trackedUnitIds, i)
+            return true
+        end
+    end
+    return false
+end
+
+function widget:CommandNotify(cmdID, cmdParams, _)
+    if cmdID == CMD_TOGGLE_UNIT_TRACKING then
+        local selectedUnits = Spring.GetSelectedUnits()
+        if #selectedUnits ~= 1 then
+            return true
+        end
+
+        local unitId = selectedUnits[1]
+        local state = cmdParams[1]
+
+        if state == 1 then
+            addUnitToTracking(unitId)
+        else
+            removeUnitFromTracking(unitId)
+        end
+
+        return true
+    end
+
+    return false
+end
+
+function widget:CommandsChanged()
+    if Spring.GetSpectatingState() then
+        return
+    end
+
+    local selectedUnits = Spring.GetSelectedUnits()
+    if #selectedUnits == 1 then
+        local unitId = selectedUnits[1]
+        local customCommands = widgetHandler.customCommands
+
+        local isTracked = false
+        for _, trackedId in ipairs(trackedUnitIds) do
+            if unitId == trackedId then
+                isTracked = true
+                break
+            end
+        end
+
+        local trackingCmd = {
+            id = CMD_TOGGLE_UNIT_TRACKING,
+            type = CMDTYPE.ICON_MODE,
+            name = 'Tracking',
+            action = 'toggle_unit_tracking',
+            params = { isTracked and 1 or 0, 'toggle_unit_tracking_disabled', 'toggle_unit_tracking_enabled' }
+        }
+        customCommands[#customCommands + 1] = trackingCmd
     end
 end
