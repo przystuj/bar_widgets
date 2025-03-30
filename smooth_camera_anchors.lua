@@ -7,7 +7,7 @@ function widget:GetInfo()
         license = "GNU GPL, v2 or later",
         layer = 0,
         enabled = true,
-        version = 0.4,
+        version = 0.5,
         handler = true,
     }
 end
@@ -29,6 +29,8 @@ local CONFIG = {
         DEFAULT_HEIGHT_OFFSET = 60, -- This will be updated dynamically based on unit height
         DEFAULT_FORWARD_OFFSET = -100,
         DEFAULT_SIDE_OFFSET = 0,
+        DEFAULT_ROTATION_OFFSET = 0, -- Default rotation offset (0 to pi, can be negative)
+        ROTATION_OFFSET = 0, -- Current rotation offset
         HEIGHT_OFFSET = 60, -- This will be updated dynamically based on unit height
         FORWARD_OFFSET = -100,
         SIDE_OFFSET = 0
@@ -53,6 +55,11 @@ local CONFIG = {
         AUTO_ORBIT_ENABLED = true, -- Whether auto-orbit is enabled
         AUTO_ORBIT_SMOOTHING_FACTOR = 5
     },
+
+    SPEC_GROUPS = {
+        ENABLED = true, -- Enable spectator unit groups
+        MAX_GROUPS = 9  -- Maximum number of groups (1-9)
+    }
 }
 
 --------------------------------------------------------------------------------
@@ -116,6 +123,11 @@ local STATE = {
         autoOrbitActive = false, -- Whether auto-orbit is currently active
         unitOffsets = {}, -- Store individual unit orbit settings
         originalTransitionFactor = nil, -- Store original transition factor
+    },
+
+    specGroups = {
+        groups = {}, -- Will store unit IDs for each group (1-9)
+        isSpectator = false -- Tracks if we're currently spectating
     },
 }
 
@@ -591,6 +603,7 @@ function FPSCamera.toggle(unitID)
         CONFIG.FPS.HEIGHT_OFFSET = STATE.tracking.unitOffsets[unitID].height
         CONFIG.FPS.FORWARD_OFFSET = STATE.tracking.unitOffsets[unitID].forward
         CONFIG.FPS.SIDE_OFFSET = STATE.tracking.unitOffsets[unitID].side
+        CONFIG.FPS.ROTATION_OFFSET = STATE.tracking.unitOffsets[unitID].rotation or 0 -- Add rotation
 
         Spring.Echo("Using previous camera offsets for unit " .. unitID)
     else
@@ -600,12 +613,14 @@ function FPSCamera.toggle(unitID)
         CONFIG.FPS.HEIGHT_OFFSET = unitHeight
         CONFIG.FPS.FORWARD_OFFSET = CONFIG.FPS.DEFAULT_FORWARD_OFFSET
         CONFIG.FPS.SIDE_OFFSET = CONFIG.FPS.DEFAULT_SIDE_OFFSET
+        CONFIG.FPS.ROTATION_OFFSET = CONFIG.FPS.DEFAULT_ROTATION_OFFSET -- Reset rotation
 
         -- Initialize storage for this unit
         STATE.tracking.unitOffsets[unitID] = {
             height = CONFIG.FPS.HEIGHT_OFFSET,
             forward = CONFIG.FPS.FORWARD_OFFSET,
-            side = CONFIG.FPS.SIDE_OFFSET
+            side = CONFIG.FPS.SIDE_OFFSET,
+            rotation = CONFIG.FPS.ROTATION_OFFSET -- Add rotation
         }
 
         Spring.Echo("Using new camera offsets for unit " .. unitID .. " with height: " .. unitHeight)
@@ -828,7 +843,6 @@ function FPSCamera.update()
         camStatePatch.ry = Util.smoothStepAngle(STATE.tracking.lastRotation.ry, lookDir.ry, rotFactor)
         camStatePatch.rz = Util.smoothStep(STATE.tracking.lastRotation.rz, lookDir.rz, rotFactor)
     elseif not STATE.tracking.inFreeCameraMode then
-        -- ... rest of the original code for normal FPS mode ...
         -- Normal FPS mode - follow unit orientation
         -- Smooth direction vector
         camStatePatch.dx = Util.smoothStep(STATE.tracking.lastCamDir.x, frontX, rotFactor)
@@ -837,6 +851,10 @@ function FPSCamera.update()
 
         -- Calculate target rotations
         local targetRy = -(Spring.GetUnitHeading(STATE.tracking.unitID, true) + math.pi)
+
+        -- Apply rotation offset
+        targetRy = targetRy + CONFIG.FPS.ROTATION_OFFSET
+
         local targetRx = 1.8
         local targetRz = 0
 
@@ -876,6 +894,40 @@ function FPSCamera.update()
 
     Spring.SetCameraState(camStatePatch, 0)
 end
+
+function FPSCamera.adjustRotationOffset(amount)
+    if not STATE.enabled then
+        Spring.Echo("Camera Suite must be enabled first")
+        return
+    end
+
+    -- Make sure we have a unit to track
+    if not STATE.tracking.unitID then
+        Spring.Echo("No unit being tracked")
+        return
+    end
+
+    -- Adjust rotation offset, keep between -pi and pi
+    CONFIG.FPS.ROTATION_OFFSET = (CONFIG.FPS.ROTATION_OFFSET + amount) % (2 * math.pi)
+    if CONFIG.FPS.ROTATION_OFFSET > math.pi then
+        CONFIG.FPS.ROTATION_OFFSET = CONFIG.FPS.ROTATION_OFFSET - 2 * math.pi
+    end
+
+    -- Update stored offsets for the current unit
+    if STATE.tracking.unitID then
+        if not STATE.tracking.unitOffsets[STATE.tracking.unitID] then
+            STATE.tracking.unitOffsets[STATE.tracking.unitID] = {}
+        end
+
+        STATE.tracking.unitOffsets[STATE.tracking.unitID].rotation = CONFIG.FPS.ROTATION_OFFSET
+    end
+
+    -- Print the updated offsets with rotation in degrees for easier understanding
+    local rotationDegrees = math.floor(CONFIG.FPS.ROTATION_OFFSET * 180 / math.pi)
+    Spring.Echo("Camera rotation offset for unit " .. STATE.tracking.unitID .. ": " .. rotationDegrees .. "°")
+end
+
+
 
 -- Toggle free camera mode
 function FPSCamera.toggleFreeCam()
@@ -959,12 +1011,14 @@ function FPSCamera.resetOffsets()
         CONFIG.FPS.HEIGHT_OFFSET = unitHeight
         CONFIG.FPS.FORWARD_OFFSET = CONFIG.FPS.DEFAULT_FORWARD_OFFSET
         CONFIG.FPS.SIDE_OFFSET = CONFIG.FPS.DEFAULT_SIDE_OFFSET
+        CONFIG.FPS.ROTATION_OFFSET = CONFIG.FPS.DEFAULT_ROTATION_OFFSET -- Reset rotation
 
         -- Update stored offsets for this unit
         STATE.tracking.unitOffsets[STATE.tracking.unitID] = {
             height = CONFIG.FPS.HEIGHT_OFFSET,
             forward = CONFIG.FPS.FORWARD_OFFSET,
-            side = CONFIG.FPS.SIDE_OFFSET
+            side = CONFIG.FPS.SIDE_OFFSET,
+            rotation = CONFIG.FPS.ROTATION_OFFSET -- Include rotation
         }
 
         Spring.Echo("Reset camera offsets for unit " .. STATE.tracking.unitID .. " to defaults")
@@ -972,6 +1026,7 @@ function FPSCamera.resetOffsets()
         CONFIG.FPS.HEIGHT_OFFSET = CONFIG.FPS.DEFAULT_HEIGHT_OFFSET
         CONFIG.FPS.FORWARD_OFFSET = CONFIG.FPS.DEFAULT_FORWARD_OFFSET
         CONFIG.FPS.SIDE_OFFSET = CONFIG.FPS.DEFAULT_SIDE_OFFSET
+        CONFIG.FPS.ROTATION_OFFSET = CONFIG.FPS.DEFAULT_ROTATION_OFFSET -- Reset rotation
         Spring.Echo("FPS camera offsets reset to defaults")
     end
 end
@@ -1110,6 +1165,146 @@ function TrackingCamera.update()
     -- Apply camera state - only updating direction and rotation
     Spring.SetCameraState(camStatePatch, 0)
 end
+
+--------------------------------------------------------------------------------
+-- SPECTATOR UNIT GROUPS FUNCTIONS
+--------------------------------------------------------------------------------
+
+local SpecGroups = {}
+
+-- Check if we're currently spectating
+function SpecGroups.checkSpectatorStatus()
+    -- Check if we're a spectator
+    local _, _, spec = Spring.GetPlayerInfo(Spring.GetMyPlayerID())
+    STATE.specGroups.isSpectator = spec
+    return spec
+end
+
+-- Set a spectator unit group
+function SpecGroups.set(groupNum)
+    -- Convert to number
+    groupNum = tonumber(groupNum)
+
+    -- Validate input
+    if not groupNum or groupNum < 1 or groupNum > CONFIG.SPEC_GROUPS.MAX_GROUPS then
+        Spring.Echo("Invalid group number. Use 1-" .. CONFIG.SPEC_GROUPS.MAX_GROUPS)
+        return false
+    end
+
+    -- Check if we're in spectator mode
+    if not SpecGroups.checkSpectatorStatus() then
+        Spring.Echo("Spectator unit groups only available when spectating")
+        return false
+    end
+
+    -- Get currently selected units
+    local selectedUnits = Spring.GetSelectedUnits()
+    if #selectedUnits == 0 then
+        Spring.Echo("No units selected to add to group " .. groupNum)
+        return false
+    end
+
+    -- Store the selected units in the group
+    STATE.specGroups.groups[groupNum] = selectedUnits
+
+    Spring.Echo("Added " .. #selectedUnits .. " units to spectator group " .. groupNum)
+    return true
+end
+
+-- Select a spectator unit group
+function SpecGroups.select(groupNum)
+    -- Convert to number
+    groupNum = tonumber(groupNum)
+
+    -- Validate input
+    if not groupNum or groupNum < 1 or groupNum > CONFIG.SPEC_GROUPS.MAX_GROUPS then
+        Spring.Echo("Invalid group number. Use 1-" .. CONFIG.SPEC_GROUPS.MAX_GROUPS)
+        return false
+    end
+
+    -- Check if we're in spectator mode
+    if not SpecGroups.checkSpectatorStatus() then
+        Spring.Echo("Spectator unit groups only available when spectating")
+        return false
+    end
+
+    -- Check if the group exists
+    if not STATE.specGroups.groups[groupNum] or #STATE.specGroups.groups[groupNum] == 0 then
+        Spring.Echo("Spectator group " .. groupNum .. " is empty")
+        return false
+    end
+
+    -- Filter valid units
+    local validUnits = {}
+    for _, unitID in ipairs(STATE.specGroups.groups[groupNum]) do
+        if Spring.ValidUnitID(unitID) then
+            table.insert(validUnits, unitID)
+        end
+    end
+
+    -- Update the group with only valid units
+    STATE.specGroups.groups[groupNum] = validUnits
+
+    -- If no valid units remain, report it
+    if #validUnits == 0 then
+        Spring.Echo("No valid units remain in spectator group " .. groupNum)
+        return false
+    end
+
+    -- Select the units
+    Spring.SelectUnitArray(validUnits)
+
+    Spring.Echo("Selected " .. #validUnits .. " units from spectator group " .. groupNum)
+    return true
+end
+
+-- Clear a spectator unit group
+function SpecGroups.clear(groupNum)
+    -- Convert to number
+    groupNum = tonumber(groupNum)
+
+    -- Validate input
+    if not groupNum or groupNum < 1 or groupNum > CONFIG.SPEC_GROUPS.MAX_GROUPS then
+        Spring.Echo("Invalid group number. Use 1-" .. CONFIG.SPEC_GROUPS.MAX_GROUPS)
+        return false
+    end
+
+    -- Clear the group
+    STATE.specGroups.groups[groupNum] = {}
+
+    Spring.Echo("Cleared spectator group " .. groupNum)
+    return true
+end
+
+-- Handle the spectator unit group command
+function SpecGroups.handleCommand(params)
+    local action, groupNum = params:match("(%a+)%s+(%d+)")
+    if not action or not groupNum then
+        Spring.Echo("Usage: /spec_unit_group [set|select|clear] [1-" .. CONFIG.SPEC_GROUPS.MAX_GROUPS .. "]")
+        return true
+    end
+
+    groupNum = tonumber(groupNum)
+
+    if not groupNum or groupNum < 1 or groupNum > CONFIG.SPEC_GROUPS.MAX_GROUPS then
+        Spring.Echo("Invalid group number. Use 1-" .. CONFIG.SPEC_GROUPS.MAX_GROUPS)
+        return true
+    end
+
+    if action == "set" then
+        SpecGroups.set(groupNum)
+    elseif action == "select" then
+        SpecGroups.select(groupNum)
+    elseif action == "clear" then
+        SpecGroups.clear(groupNum)
+    else
+        Spring.Echo("Unknown action. Use 'set', 'select', or 'clear'")
+    end
+
+    return true
+
+end
+
 
 --------------------------------------------------------------------------------
 -- ORBITING CAMERA FUNCTIONS
@@ -1936,6 +2131,14 @@ function widget:Initialize()
         FPSCamera.adjustOffset("side", -10)
     end, nil, 'pR')
 
+    widgetHandler.actionHandler:AddAction(self, "fps_rotation_right", function()
+        FPSCamera.adjustRotationOffset(0.1)
+    end, nil, 'pR')
+
+    widgetHandler.actionHandler:AddAction(self, "fps_rotation_left", function()
+        FPSCamera.adjustRotationOffset(-0.1)
+    end, nil, 'pR')
+
     widgetHandler.actionHandler:AddAction(self, "fps_toggle_free_cam", function()
         FPSCamera.toggleFreeCam()
     end, nil, 'p')
@@ -1974,6 +2177,11 @@ function widget:Initialize()
         OrbitingCamera.resetSettings()
     end, nil, 'p')
 
+    widgetHandler.actionHandler:AddAction(self, "spec_unit_group", function(_, params)
+        Util.log("hello")
+        return SpecGroups.handleCommand(params)
+    end, nil, 'p')
+
     Spring.I18N.load({
         en = {
             ["ui.orderMenu.set_fixed_look_point"] = "Look point",
@@ -1986,6 +2194,7 @@ end
 
 function widget:Shutdown()
     -- Make sure we clean up
+    widgetHandler:DeregisterGlobal("spec_unit_group")
     if STATE.enabled then
         WidgetControl.disable()
     end
@@ -2009,3 +2218,14 @@ function widget:CommandsChanged()
         customCommands[#customCommands + 1] = CMD_SET_FIXED_LOOK_POINT_DEFINITION
     end
 end
+
+function widget:GameStart()
+    SpecGroups.checkSpectatorStatus()
+end
+
+function widget:PlayerChanged(playerID)
+    if playerID == Spring.GetMyPlayerID() then
+        SpecGroups.checkSpectatorStatus()
+    end
+end
+
