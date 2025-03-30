@@ -5,9 +5,10 @@ function widget:GetInfo()
         author = "SuperKitowiec",
         date = "Mar 2025",
         license = "GNU GPL, v2 or later",
-        layer = 1,
+        layer = 0,
         enabled = true,
-        version = 0.3,
+        version = 0.4,
+        handler = true,
     }
 end
 
@@ -35,11 +36,23 @@ local CONFIG = {
 
     SMOOTHING = {
         POSITION_FACTOR = 0.05, -- Lower = smoother but more lag (0.0-1.0)
-        ROTATION_FACTOR = 0.02, -- Lower = smoother but more lag (0.0-1.0)
+        ROTATION_FACTOR = 0.008, -- Lower = smoother but more lag (0.0-1.0)
         FPS_FACTOR = 0.15, -- Specific for FPS mode
-        STATIONARY_FACTOR = 0.1, -- Specific for stationary mode
-        MODE_TRANSITION_FACTOR = 0.05  -- For smoothing between camera modes
-    }
+        TRACKING_FACTOR = 0.05, -- Specific for Tracking Camera mode
+        MODE_TRANSITION_FACTOR = 0.04  -- For smoothing between camera modes
+    },
+
+    ORBIT = {
+        DEFAULT_HEIGHT_FACTOR = 4, -- Default height is 10x unit height
+        DEFAULT_DISTANCE = 300, -- Default distance from unit
+        DEFAULT_SPEED = 0.0005, -- Radians per frame
+        HEIGHT = nil, -- Will be set dynamically based on unit height
+        DISTANCE = 300, -- Distance from unit
+        SPEED = 0.01, -- Orbit speed in radians per frame
+        AUTO_ORBIT_DELAY = 3, -- Seconds of no movement to trigger auto orbit
+        AUTO_ORBIT_ENABLED = true, -- Whether auto-orbit is enabled
+        AUTO_ORBIT_SMOOTHING_FACTOR = 5
+    },
 }
 
 --------------------------------------------------------------------------------
@@ -53,6 +66,7 @@ local STATE = {
 
     -- Anchors
     anchors = {},
+    lastUsedAnchor = nil,
 
     -- Transition
     transition = {
@@ -65,13 +79,16 @@ local STATE = {
 
     -- Tracking
     tracking = {
-        mode = nil, -- 'fps' or 'stationary'
+        mode = nil, -- 'fps' or 'tracking_camera' or 'fixed_point'
         unitID = nil,
+        targetUnitID = nil, -- Store the ID of the unit we're looking at
         inFreeCameraMode = false,
-        stationaryCamState = nil,
         graceTimer = nil, -- Timer for grace period
         lastUnitID = nil, -- Store the last tracked unit
         unitOffsets = {}, -- Store individual unit camera offsets
+
+        -- For fixed point tracking
+        fixedPoint = nil, -- {x, y, z}
 
         -- Smoothing data
         lastUnitPos = { x = 0, y = 0, z = 0 },
@@ -88,14 +105,32 @@ local STATE = {
 
     -- Delayed actions
     delayed = {
-        frame = nil,
-        callback = nil
-    }
+        frame = nil, -- Game frame when the callback should execute
+        callback = nil  -- Function to call when frame is reached
+    },
+
+    orbit = {
+        angle = 0, -- Current orbit angle in radians
+        lastPosition = nil, -- Last unit position to detect movement
+        stationaryTimer = nil, -- Timer to track how long unit has been stationary
+        autoOrbitActive = false, -- Whether auto-orbit is currently active
+        unitOffsets = {}, -- Store individual unit orbit settings
+        originalTransitionFactor = nil, -- Store original transition factor
+    },
 }
 
 --------------------------------------------------------------------------------
 -- UTILITY FUNCTIONS
 --------------------------------------------------------------------------------
+local CMD_SET_FIXED_LOOK_POINT = 455625
+local CMD_SET_FIXED_LOOK_POINT_DEFINITION = {
+    id = CMD_SET_FIXED_LOOK_POINT,
+    type = CMDTYPE.ICON_UNIT_OR_MAP,
+    name = 'Set Fixed Look Point',
+    tooltip = 'Click on a location to focus camera on while following unit',
+    cursor = 'settarget',
+    action = 'set_fixed_look_point',
+}
 
 local Util = {}
 
@@ -199,23 +234,30 @@ function Util.getUnitHeight(unitID)
 end
 
 -- Disable tracking
-function Util.disableTracking(camState)
+function Util.disableTracking()
     -- Start mode transition if we're disabling from a tracking mode
     if STATE.tracking.mode then
         Util.beginModeTransition(nil)
+    end
 
-        -- If we have a specific camera state to return to (for stationary mode)
-        if STATE.tracking.mode == 'stationary' and camState then
-            -- Don't set it immediately, we'll transition to it
-            STATE.tracking.transitionTargetState = camState
-        end
+    -- Restore original transition factor if needed
+    if STATE.orbit.originalTransitionFactor then
+        CONFIG.SMOOTHING.MODE_TRANSITION_FACTOR = STATE.orbit.originalTransitionFactor
+        STATE.orbit.originalTransitionFactor = nil
     end
 
     STATE.tracking.unitID = nil
+    STATE.tracking.targetUnitID = nil  -- Clear the target unit ID
     STATE.tracking.inFreeCameraMode = false
-    STATE.tracking.stationaryCamState = nil
     STATE.tracking.graceTimer = nil
     STATE.tracking.lastUnitID = nil
+    STATE.tracking.fixedPoint = nil
+    STATE.tracking.mode = nil
+
+    -- Reset orbit-specific states
+    STATE.orbit.autoOrbitActive = false
+    STATE.orbit.stationaryTimer = nil
+    STATE.orbit.lastPosition = nil
 end
 
 function Util.smoothStep(current, target, factor)
@@ -239,6 +281,38 @@ function Util.smoothStepAngle(current, target, factor)
     end
 
     return current + diff * factor
+end
+
+-- Calculate camera direction and rotation to look at a point
+function Util.calculateLookAtPoint(camPos, targetPos)
+    -- Calculate direction vector from camera to target
+    local dirX = targetPos.x - camPos.x
+    local dirY = targetPos.y - camPos.y
+    local dirZ = targetPos.z - camPos.z
+
+    -- Normalize the direction vector
+    local length = math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ)
+    if length > 0 then
+        dirX = dirX / length
+        dirY = dirY / length
+        dirZ = dirZ / length
+    end
+
+    -- Calculate appropriate rotation for FPS camera
+    local ry = -math.atan2(dirX, dirZ) - math.pi
+
+    -- Calculate pitch (rx)
+    local horizontalLength = math.sqrt(dirX * dirX + dirZ * dirZ)
+    local rx = -((math.atan2(dirY, horizontalLength) - math.pi) / 1.8)
+
+    return {
+        dx = dirX,
+        dy = dirY,
+        dz = dirZ,
+        rx = rx,
+        ry = ry,
+        rz = 0
+    }
 end
 
 function Util.beginModeTransition(newMode)
@@ -290,7 +364,7 @@ function WidgetControl.enable()
     -- Calculate good height to view the entire map
     -- Using the longer dimension to ensure everything is visible
     local mapDiagonal = math.sqrt(mapX * mapX + mapZ * mapZ)
-    local viewHeight = mapDiagonal
+    local viewHeight = mapDiagonal / 3
 
     -- Switch to FPS camera mode and center on map
     local camStatePatch = {
@@ -436,6 +510,8 @@ function CameraTransition.update()
 
         -- Apply the camera state for this step
         local state = STATE.transition.steps[STATE.transition.currentStepIndex]
+
+        -- Apply the base camera state (position)
         Spring.SetCameraState(state, 0)
 
         -- Check if we've reached the end
@@ -535,6 +611,9 @@ function FPSCamera.toggle(unitID)
         Spring.Echo("Using new camera offsets for unit " .. unitID .. " with height: " .. unitHeight)
     end
 
+    -- Disable fixed point tracking if active
+    STATE.tracking.fixedPoint = nil
+
     -- Begin mode transition from previous mode to FPS mode
     Util.beginModeTransition('fps')
     STATE.tracking.unitID = unitID
@@ -548,9 +627,86 @@ function FPSCamera.toggle(unitID)
     Spring.SetCameraState(camStatePatch, 0)
 end
 
+-- Set a fixed point for the camera to look at while following a unit
+function FPSCamera.setFixedLookPoint(cmdParams)
+    if not STATE.enabled then
+        Spring.Echo("Camera Suite must be enabled first")
+        return
+    end
+
+    -- Only works if we're tracking a unit in FPS mode
+    if STATE.tracking.mode ~= 'fps' or not STATE.tracking.unitID then
+        Spring.Echo("Fixed point tracking only works when in FPS mode")
+        return false
+    end
+
+    local x, y, z
+    STATE.tracking.targetUnitID = nil -- Reset target unit ID
+
+    -- Process different types of input
+    if cmdParams then
+        if #cmdParams == 1 then
+            -- Clicked on a unit
+            local unitID = cmdParams[1]
+            if Spring.ValidUnitID(unitID) then
+                -- Store the target unit ID for continuous tracking
+                STATE.tracking.targetUnitID = unitID
+                x, y, z = Spring.GetUnitPosition(unitID)
+                Spring.Echo("Camera will follow current unit but look at unit " .. unitID)
+            end
+        elseif #cmdParams == 3 then
+            -- Clicked on ground/feature
+            x, y, z = cmdParams[1], cmdParams[2], cmdParams[3]
+        end
+    else
+        -- Legacy behavior - use current mouse position
+        local _, pos = Spring.TraceScreenRay(Spring.GetMouseState(), true)
+        if pos then
+            x, y, z = pos[1], pos[2], pos[3]
+        end
+    end
+
+    if not x or not y or not z then
+        Spring.Echo("Could not find a valid position")
+        return false
+    end
+
+    -- Set the fixed point
+    STATE.tracking.fixedPoint = {
+        x = x,
+        y = y,
+        z = z
+    }
+
+    -- Switch to fixed point mode
+    STATE.tracking.mode = 'fixed_point'
+
+    if not STATE.tracking.targetUnitID then
+        Spring.Echo("Camera will follow unit but look at fixed point")
+    end
+
+    return true
+end
+
+-- Clear fixed point tracking
+function FPSCamera.clearFixedLookPoint()
+    if not STATE.enabled then
+        Spring.Echo("Camera Suite must be enabled first")
+        return
+    end
+
+    if STATE.tracking.mode == 'fixed_point' and STATE.tracking.unitID then
+        -- Switch back to FPS mode
+        STATE.tracking.mode = 'fps'
+        STATE.tracking.fixedPoint = nil
+        STATE.tracking.targetUnitID = nil  -- Clear the target unit ID
+        Spring.Echo("Fixed point tracking disabled, returning to FPS mode")
+    end
+end
+
 -- Update the FPS camera position to match the tracked unit
 function FPSCamera.update()
-    if STATE.tracking.mode ~= 'fps' or not STATE.tracking.unitID then
+    if (STATE.tracking.mode ~= 'fps' and STATE.tracking.mode ~= 'fixed_point') or not STATE.tracking.unitID then
         return
     end
 
@@ -643,8 +799,37 @@ function FPSCamera.update()
     camStatePatch.py = Util.smoothStep(STATE.tracking.lastCamPos.y, y, posFactor)
     camStatePatch.pz = Util.smoothStep(STATE.tracking.lastCamPos.z, z, posFactor)
 
-    -- If not in free camera mode, smooth rotation and direction too
-    if not STATE.tracking.inFreeCameraMode then
+    -- Handle different cases for direction and rotation
+    if STATE.tracking.mode == 'fixed_point' then
+        -- Update fixed point if we're tracking a unit
+        if STATE.tracking.targetUnitID and Spring.ValidUnitID(STATE.tracking.targetUnitID) then
+            -- Get the current position of the target unit
+            local targetX, targetY, targetZ = Spring.GetUnitPosition(STATE.tracking.targetUnitID)
+            STATE.tracking.fixedPoint = {
+                x = targetX,
+                y = targetY,
+                z = targetZ
+            }
+        end
+
+        -- Fixed point tracking - look at the fixed point
+        local lookDir = Util.calculateLookAtPoint(
+                { x = camStatePatch.px, y = camStatePatch.py, z = camStatePatch.pz },
+                STATE.tracking.fixedPoint
+        )
+
+        -- Apply the look direction with smoothing
+        camStatePatch.dx = Util.smoothStep(STATE.tracking.lastCamDir.x, lookDir.dx, rotFactor)
+        camStatePatch.dy = Util.smoothStep(STATE.tracking.lastCamDir.y, lookDir.dy, rotFactor)
+        camStatePatch.dz = Util.smoothStep(STATE.tracking.lastCamDir.z, lookDir.dz, rotFactor)
+
+        -- Apply rotation angles with smoothing
+        camStatePatch.rx = Util.smoothStep(STATE.tracking.lastRotation.rx, lookDir.rx, rotFactor)
+        camStatePatch.ry = Util.smoothStepAngle(STATE.tracking.lastRotation.ry, lookDir.ry, rotFactor)
+        camStatePatch.rz = Util.smoothStep(STATE.tracking.lastRotation.rz, lookDir.rz, rotFactor)
+    elseif not STATE.tracking.inFreeCameraMode then
+        -- ... rest of the original code for normal FPS mode ...
+        -- Normal FPS mode - follow unit orientation
         -- Smooth direction vector
         camStatePatch.dx = Util.smoothStep(STATE.tracking.lastCamDir.x, frontX, rotFactor)
         camStatePatch.dy = Util.smoothStep(STATE.tracking.lastCamDir.y, frontY, rotFactor)
@@ -659,17 +844,8 @@ function FPSCamera.update()
         camStatePatch.ry = Util.smoothStepAngle(STATE.tracking.lastRotation.ry, targetRy, rotFactor)
         camStatePatch.rx = Util.smoothStep(STATE.tracking.lastRotation.rx, targetRx, rotFactor)
         camStatePatch.rz = Util.smoothStep(STATE.tracking.lastRotation.rz, targetRz, rotFactor)
-
-        -- Update last rotation values
-        STATE.tracking.lastRotation.rx = camStatePatch.rx
-        STATE.tracking.lastRotation.ry = camStatePatch.ry
-        STATE.tracking.lastRotation.rz = camStatePatch.rz
-
-        -- Update last direction values
-        STATE.tracking.lastCamDir.x = camStatePatch.dx
-        STATE.tracking.lastCamDir.y = camStatePatch.dy
-        STATE.tracking.lastCamDir.z = camStatePatch.dz
     else
+        -- ... rest of the original code for free camera mode ...
         -- In free camera mode, only update position
         -- Keep rotations from current state
         camStatePatch.dx = camState.dx
@@ -678,7 +854,20 @@ function FPSCamera.update()
         camStatePatch.rx = camState.rx
         camStatePatch.ry = camState.ry
         camStatePatch.rz = camState.rz
+
     end
+
+
+    -- ... rest of the update function ...
+    -- Update last rotation values
+    STATE.tracking.lastRotation.rx = camStatePatch.rx
+    STATE.tracking.lastRotation.ry = camStatePatch.ry
+    STATE.tracking.lastRotation.rz = camStatePatch.rz
+
+    -- Update last direction values
+    STATE.tracking.lastCamDir.x = camStatePatch.dx
+    STATE.tracking.lastCamDir.y = camStatePatch.dy
+    STATE.tracking.lastCamDir.z = camStatePatch.dz
 
     -- Update last camera position
     STATE.tracking.lastCamPos.x = camStatePatch.px
@@ -696,7 +885,7 @@ function FPSCamera.toggleFreeCam()
     end
 
     -- Only works if we're tracking a unit in FPS mode
-    if STATE.tracking.mode ~= 'fps' or not STATE.tracking.unitID then
+    if (STATE.tracking.mode ~= 'fps' and STATE.tracking.mode ~= 'fixed_point') or not STATE.tracking.unitID then
         Spring.Echo("Free camera only works when tracking a unit in FPS mode")
         return
     end
@@ -748,6 +937,12 @@ function FPSCamera.adjustOffset(offsetType, amount)
             side = CONFIG.FPS.SIDE_OFFSET
         }
     end
+
+    -- Print the updated offsets
+    Spring.Echo("Camera offsets for unit " .. STATE.tracking.unitID .. ":")
+    Spring.Echo("  Height: " .. CONFIG.FPS.HEIGHT_OFFSET)
+    Spring.Echo("  Forward: " .. CONFIG.FPS.FORWARD_OFFSET)
+    Spring.Echo("  Side: " .. CONFIG.FPS.SIDE_OFFSET)
 end
 
 -- Reset camera offsets to defaults
@@ -758,7 +953,7 @@ function FPSCamera.resetOffsets()
     end
 
     -- If we have a tracked unit, get its height for the default height offset
-    if STATE.tracking.mode == 'fps' and STATE.tracking.unitID and Spring.ValidUnitID(STATE.tracking.unitID) then
+    if (STATE.tracking.mode == 'fps' or STATE.tracking.mode == 'fixed_point') and STATE.tracking.unitID and Spring.ValidUnitID(STATE.tracking.unitID) then
         local unitHeight = Util.getUnitHeight(STATE.tracking.unitID)
         CONFIG.FPS.DEFAULT_HEIGHT_OFFSET = unitHeight
         CONFIG.FPS.HEIGHT_OFFSET = unitHeight
@@ -782,13 +977,13 @@ function FPSCamera.resetOffsets()
 end
 
 --------------------------------------------------------------------------------
--- STATIONARY TRACKING FUNCTIONS
+-- TRACKING CAMERA FUNCTIONS
 --------------------------------------------------------------------------------
 
-local StationaryTracking = {}
+local TrackingCamera = {}
 
--- Toggle stationary camera tracking
-function StationaryTracking.toggle()
+-- Toggle tracking camera
+function TrackingCamera.toggle()
     if not STATE.enabled then
         Spring.Echo("Camera Suite must be enabled first")
         return true
@@ -798,26 +993,26 @@ function StationaryTracking.toggle()
     local selectedUnits = Spring.GetSelectedUnits()
     if #selectedUnits == 0 then
         -- If no unit is selected and tracking is currently on, turn it off
-        if STATE.tracking.mode == 'stationary' then
-            Util.disableTracking(STATE.tracking.stationaryCamState)
-            Spring.Echo("Stationary camera tracking disabled")
+        if STATE.tracking.mode == 'tracking_camera' then
+            Util.disableTracking()
+            Spring.Echo("Tracking Camera disabled")
         else
-            Spring.Echo("No unit selected for stationary tracking")
+            Spring.Echo("No unit selected for Tracking Camera")
         end
         return true
     end
 
     local selectedUnitID = selectedUnits[1]
 
-    -- If we're already tracking this exact unit in stationary mode, turn it off
-    if STATE.tracking.mode == 'stationary' and STATE.tracking.unitID == selectedUnitID then
-        Util.disableTracking(STATE.tracking.stationaryCamState)
-        Spring.Echo("Stationary camera tracking disabled")
+    -- If we're already tracking this exact unit in tracking camera mode, turn it off
+    if STATE.tracking.mode == 'tracking_camera' and STATE.tracking.unitID == selectedUnitID then
+        Util.disableTracking()
+        Spring.Echo("Tracking Camera disabled")
         return true
     end
 
     -- Otherwise we're either starting fresh or switching units
-    Spring.Echo("Stationary camera tracking enabled. Camera will stay fixed but follow unit " .. selectedUnitID)
+    Spring.Echo("Tracking Camera enabled. Camera will track unit " .. selectedUnitID)
 
     -- Get current camera state and ensure it's FPS mode
     local camState = Spring.GetCameraState()
@@ -828,22 +1023,21 @@ function StationaryTracking.toggle()
     end
 
     -- Begin mode transition
-    Util.beginModeTransition('stationary')
+    Util.beginModeTransition('tracking_camera')
     STATE.tracking.unitID = selectedUnitID
-    STATE.tracking.stationaryCamState = Spring.GetCameraState()
 
     return true
 end
 
--- Update stationary camera tracking
-function StationaryTracking.update()
-    if STATE.tracking.mode ~= 'stationary' or not STATE.tracking.unitID or not STATE.tracking.stationaryCamState then
+-- Update tracking camera
+function TrackingCamera.update()
+    if STATE.tracking.mode ~= 'tracking_camera' or not STATE.tracking.unitID then
         return
     end
 
     -- Check if unit still exists
     if not Spring.ValidUnitID(STATE.tracking.unitID) then
-        Spring.Echo("Tracked unit no longer exists, disabling stationary tracking")
+        Spring.Echo("Tracked unit no longer exists, disabling Tracking Camera")
         Util.disableTracking()
         return
     end
@@ -859,47 +1053,16 @@ function StationaryTracking.update()
 
     -- Get unit position
     local unitX, unitY, unitZ = Spring.GetUnitPosition(STATE.tracking.unitID)
+    local targetPos = { x = unitX, y = unitY, z = unitZ }
 
-    -- Calculate direction vector from camera to unit
-    local dirX = unitX - STATE.tracking.stationaryCamState.px
-    local dirY = unitY - STATE.tracking.stationaryCamState.py
-    local dirZ = unitZ - STATE.tracking.stationaryCamState.pz
+    -- Get current camera position
+    local camPos = { x = currentState.px, y = currentState.py, z = currentState.pz }
 
-    -- Normalize the direction vector
-    local length = math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ)
-    if length > 0 then
-        dirX = dirX / length
-        dirY = dirY / length
-        dirZ = dirZ / length
-    end
-
-    -- Calculate appropriate rotation for FPS camera
-    local targetRy = -math.atan2(dirX, dirZ) - math.pi
-
-    -- Calculate pitch (rx)
-    local horizontalLength = math.sqrt(dirX * dirX + dirZ * dirZ)
-    local targetRx = -((math.atan2(dirY, horizontalLength) - math.pi) / 1.8)
-
-    -- Create camera state patch
-    local camStatePatch = {
-        -- Keep camera in the fixed position
-        px = STATE.tracking.stationaryCamState.px,
-        py = STATE.tracking.stationaryCamState.py,
-        pz = STATE.tracking.stationaryCamState.pz,
-
-        -- Keep FPS camera mode
-        mode = 0,
-        name = "fps"
-    }
-
-    -- Initialize last values if needed
-    if STATE.tracking.lastCamDir.x == 0 and STATE.tracking.lastCamDir.y == 0 and STATE.tracking.lastCamDir.z == 0 then
-        STATE.tracking.lastCamDir = { x = dirX, y = dirY, z = dirZ }
-        STATE.tracking.lastRotation = { rx = targetRx, ry = targetRy, rz = 0 }
-    end
+    -- Calculate look direction to the unit
+    local lookDir = Util.calculateLookAtPoint(camPos, targetPos)
 
     -- Determine smoothing factor based on whether we're in a mode transition
-    local dirFactor = CONFIG.SMOOTHING.STATIONARY_FACTOR
+    local dirFactor = CONFIG.SMOOTHING.TRACKING_FACTOR
     local rotFactor = CONFIG.SMOOTHING.ROTATION_FACTOR
 
     if STATE.tracking.modeTransition then
@@ -915,15 +1078,27 @@ function StationaryTracking.update()
         end
     end
 
-    -- Smooth direction vector
-    camStatePatch.dx = Util.smoothStep(STATE.tracking.lastCamDir.x, dirX, dirFactor)
-    camStatePatch.dy = Util.smoothStep(STATE.tracking.lastCamDir.y, dirY, dirFactor)
-    camStatePatch.dz = Util.smoothStep(STATE.tracking.lastCamDir.z, dirZ, dirFactor)
+    -- Initialize last values if needed
+    if STATE.tracking.lastCamDir.x == 0 and STATE.tracking.lastCamDir.y == 0 and STATE.tracking.lastCamDir.z == 0 then
+        STATE.tracking.lastCamDir = { x = lookDir.dx, y = lookDir.dy, z = lookDir.dz }
+        STATE.tracking.lastRotation = { rx = lookDir.rx, ry = lookDir.ry, rz = 0 }
+    end
 
-    -- Smooth rotations
-    camStatePatch.rx = Util.smoothStep(STATE.tracking.lastRotation.rx, targetRx, rotFactor)
-    camStatePatch.ry = Util.smoothStepAngle(STATE.tracking.lastRotation.ry, targetRy, rotFactor)
-    camStatePatch.rz = 0
+    -- Create camera state patch - only update direction, not position
+    local camStatePatch = {
+        mode = 0,
+        name = "fps",
+
+        -- Smooth direction vector
+        dx = Util.smoothStep(STATE.tracking.lastCamDir.x, lookDir.dx, dirFactor),
+        dy = Util.smoothStep(STATE.tracking.lastCamDir.y, lookDir.dy, dirFactor),
+        dz = Util.smoothStep(STATE.tracking.lastCamDir.z, lookDir.dz, dirFactor),
+
+        -- Smooth rotations
+        rx = Util.smoothStep(STATE.tracking.lastRotation.rx, lookDir.rx, rotFactor),
+        ry = Util.smoothStepAngle(STATE.tracking.lastRotation.ry, lookDir.ry, rotFactor),
+        rz = 0
+    }
 
     -- Update last values
     STATE.tracking.lastCamDir.x = camStatePatch.dx
@@ -932,8 +1107,393 @@ function StationaryTracking.update()
     STATE.tracking.lastRotation.rx = camStatePatch.rx
     STATE.tracking.lastRotation.ry = camStatePatch.ry
 
+    -- Apply camera state - only updating direction and rotation
+    Spring.SetCameraState(camStatePatch, 0)
+end
+
+--------------------------------------------------------------------------------
+-- ORBITING CAMERA FUNCTIONS
+--------------------------------------------------------------------------------
+
+local OrbitingCamera = {}
+
+-- Toggle orbiting camera
+function OrbitingCamera.toggle(unitID)
+    if not STATE.enabled then
+        Spring.Echo("Camera Suite must be enabled first")
+        return
+    end
+
+    -- If no unitID provided, use the first selected unit
+    if not unitID then
+        local selectedUnits = Spring.GetSelectedUnits()
+        if #selectedUnits > 0 then
+            unitID = selectedUnits[1]
+        else
+            Spring.Echo("No unit selected for Orbiting view")
+            return
+        end
+    end
+
+    -- Check if it's a valid unit
+    if not Spring.ValidUnitID(unitID) then
+        Spring.Echo("Invalid unit ID for Orbiting view")
+        return
+    end
+
+    -- If we're already tracking this exact unit in Orbiting mode, turn it off
+    if STATE.tracking.mode == 'orbit' and STATE.tracking.unitID == unitID then
+        -- Save current orbiting settings before disabling
+        STATE.orbit.unitOffsets[unitID] = {
+            speed = CONFIG.ORBIT.SPEED
+        }
+
+        Util.disableTracking()
+        Spring.Echo("Orbiting camera detached")
+        return
+    end
+
+    -- Get unit height for the default height offset
+    local unitHeight = Util.getUnitHeight(unitID)
+
+    -- Check if we have stored settings for this unit
+    if STATE.orbit.unitOffsets[unitID] then
+        -- Use stored settings
+        CONFIG.ORBIT.SPEED = STATE.orbit.unitOffsets[unitID].speed
+        Spring.Echo("Using previous orbit speed for unit " .. unitID)
+    else
+        -- Use default settings
+        CONFIG.ORBIT.SPEED = CONFIG.ORBIT.DEFAULT_SPEED
+
+        -- Initialize storage for this unit
+        STATE.orbit.unitOffsets[unitID] = {
+            speed = CONFIG.ORBIT.SPEED
+        }
+    end
+
+    -- Set height based on unit height
+    CONFIG.ORBIT.HEIGHT = unitHeight * CONFIG.ORBIT.DEFAULT_HEIGHT_FACTOR
+    CONFIG.ORBIT.DISTANCE = CONFIG.ORBIT.DEFAULT_DISTANCE
+
+    -- Begin mode transition from previous mode to orbit mode
+    Util.beginModeTransition('orbit')
+    STATE.tracking.unitID = unitID
+
+    -- Initialize orbit angle based on current camera position
+    local unitX, unitY, unitZ = Spring.GetUnitPosition(unitID)
+    local camState = Spring.GetCameraState()
+
+    -- Calculate current angle based on camera position relative to unit
+    STATE.orbit.angle = math.atan2(camState.px - unitX, camState.pz - unitZ)
+
+    -- Initialize the last position for auto-orbit feature
+    STATE.orbit.lastPosition = { x = unitX, y = unitY, z = unitZ }
+    STATE.orbit.stationaryTimer = nil
+    STATE.orbit.autoOrbitActive = false
+
+    -- Switch to FPS camera mode for consistent behavior
+    local camStatePatch = {
+        name = "fps",
+        mode = 0  -- FPS camera mode
+    }
+    Spring.SetCameraState(camStatePatch, 0)
+
+    Spring.Echo("Orbiting camera attached to unit " .. unitID)
+end
+
+-- Update the Orbiting camera position
+function OrbitingCamera.update()
+    if STATE.tracking.mode ~= 'orbit' or not STATE.tracking.unitID then
+        return
+    end
+
+    -- Check if unit still exists
+    if not Spring.ValidUnitID(STATE.tracking.unitID) then
+        Spring.Echo("Unit no longer exists, detaching Orbiting camera")
+        Util.disableTracking()
+        return
+    end
+
+    -- Get unit position
+    local unitX, unitY, unitZ = Spring.GetUnitPosition(STATE.tracking.unitID)
+
+    -- Update orbit angle
+    STATE.orbit.angle = STATE.orbit.angle + CONFIG.ORBIT.SPEED
+
+    -- Calculate camera position on the orbit circle
+    local camX = unitX + CONFIG.ORBIT.DISTANCE * math.sin(STATE.orbit.angle)
+    local camY = unitY + CONFIG.ORBIT.HEIGHT
+    local camZ = unitZ + CONFIG.ORBIT.DISTANCE * math.cos(STATE.orbit.angle)
+
+    -- Create camera state looking at the unit
+    local camPos = { x = camX, y = camY, z = camZ }
+    local targetPos = { x = unitX, y = unitY, z = unitZ }
+    local lookDir = Util.calculateLookAtPoint(camPos, targetPos)
+
+    -- Determine smoothing factor based on whether we're in a mode transition
+    local smoothFactor = CONFIG.SMOOTHING.POSITION_FACTOR
+    local rotFactor = CONFIG.SMOOTHING.ROTATION_FACTOR
+
+    if STATE.tracking.modeTransition then
+        -- Use a special transition factor during mode changes
+        smoothFactor = CONFIG.SMOOTHING.MODE_TRANSITION_FACTOR
+        rotFactor = CONFIG.SMOOTHING.MODE_TRANSITION_FACTOR
+
+        -- Check if we should end the transition (after ~1 second)
+        local now = Spring.GetTimer()
+        local elapsed = Spring.DiffTimers(now, STATE.tracking.transitionStartTime)
+        if elapsed > 1.0 then
+            STATE.tracking.modeTransition = false
+        end
+    end
+
+    -- If this is the first update, initialize last positions
+    if STATE.tracking.lastCamPos.x == 0 and STATE.tracking.lastCamPos.y == 0 and STATE.tracking.lastCamPos.z == 0 then
+        STATE.tracking.lastCamPos = { x = camX, y = camY, z = camZ }
+        STATE.tracking.lastCamDir = { x = lookDir.dx, y = lookDir.dy, z = lookDir.dz }
+        STATE.tracking.lastRotation = { rx = lookDir.rx, ry = lookDir.ry, rz = 0 }
+    end
+
+    -- Prepare camera state patch with smoothed values
+    local camStatePatch = {
+        mode = 0,
+        name = "fps",
+
+        -- Smooth camera position
+        px = Util.smoothStep(STATE.tracking.lastCamPos.x, camX, smoothFactor),
+        py = Util.smoothStep(STATE.tracking.lastCamPos.y, camY, smoothFactor),
+        pz = Util.smoothStep(STATE.tracking.lastCamPos.z, camZ, smoothFactor),
+
+        -- Smooth direction
+        dx = Util.smoothStep(STATE.tracking.lastCamDir.x, lookDir.dx, smoothFactor),
+        dy = Util.smoothStep(STATE.tracking.lastCamDir.y, lookDir.dy, smoothFactor),
+        dz = Util.smoothStep(STATE.tracking.lastCamDir.z, lookDir.dz, smoothFactor),
+
+        -- Smooth rotation
+        rx = Util.smoothStep(STATE.tracking.lastRotation.rx, lookDir.rx, rotFactor),
+        ry = Util.smoothStepAngle(STATE.tracking.lastRotation.ry, lookDir.ry, rotFactor),
+        rz = 0
+    }
+
+    -- Update last values for next frame
+    STATE.tracking.lastCamPos.x = camStatePatch.px
+    STATE.tracking.lastCamPos.y = camStatePatch.py
+    STATE.tracking.lastCamPos.z = camStatePatch.pz
+    STATE.tracking.lastCamDir.x = camStatePatch.dx
+    STATE.tracking.lastCamDir.y = camStatePatch.dy
+    STATE.tracking.lastCamDir.z = camStatePatch.dz
+    STATE.tracking.lastRotation.rx = camStatePatch.rx
+    STATE.tracking.lastRotation.ry = camStatePatch.ry
+
     -- Apply camera state
     Spring.SetCameraState(camStatePatch, 0)
+end
+
+-- Adjust orbit speed
+function OrbitingCamera.adjustSpeed(amount)
+    if not STATE.enabled then
+        Spring.Echo("Camera Suite must be enabled first")
+        return
+    end
+
+    -- Make sure we have a unit to orbit around
+    if STATE.tracking.mode ~= 'orbit' or not STATE.tracking.unitID then
+        Spring.Echo("No unit being orbited")
+        return
+    end
+
+    CONFIG.ORBIT.SPEED = math.max(0.0001, math.min(0.05, CONFIG.ORBIT.SPEED + amount))
+
+    -- Update stored settings for the current unit
+    if STATE.tracking.unitID then
+        if not STATE.orbit.unitOffsets[STATE.tracking.unitID] then
+            STATE.orbit.unitOffsets[STATE.tracking.unitID] = {}
+        end
+
+        STATE.orbit.unitOffsets[STATE.tracking.unitID].speed = CONFIG.ORBIT.SPEED
+    end
+
+    -- Print the updated settings
+    Spring.Echo("Orbit speed for unit " .. STATE.tracking.unitID .. ": " .. CONFIG.ORBIT.SPEED)
+end
+
+-- Reset orbit settings to defaults
+function OrbitingCamera.resetSettings()
+    if not STATE.enabled then
+        Spring.Echo("Camera Suite must be enabled first")
+        return
+    end
+
+    -- If we have a tracked unit, reset its orbit speed
+    if STATE.tracking.mode == 'orbit' and STATE.tracking.unitID and Spring.ValidUnitID(STATE.tracking.unitID) then
+        CONFIG.ORBIT.SPEED = CONFIG.ORBIT.DEFAULT_SPEED
+
+        -- Update stored settings for this unit
+        if not STATE.orbit.unitOffsets[STATE.tracking.unitID] then
+            STATE.orbit.unitOffsets[STATE.tracking.unitID] = {}
+        end
+        STATE.orbit.unitOffsets[STATE.tracking.unitID].speed = CONFIG.ORBIT.SPEED
+
+        Spring.Echo("Reset orbit speed for unit " .. STATE.tracking.unitID .. " to default")
+    else
+        Spring.Echo("No unit being orbited")
+    end
+end
+
+-- Check for unit movement for auto-orbit feature
+function OrbitingCamera.checkUnitMovement()
+    -- Only check if we're in FPS mode with a valid unit and auto-orbit is enabled
+    if STATE.tracking.mode ~= 'fps' or not STATE.tracking.unitID or not CONFIG.ORBIT.AUTO_ORBIT_ENABLED then
+        return
+    end
+
+    -- Get current unit position
+    local unitX, unitY, unitZ = Spring.GetUnitPosition(STATE.tracking.unitID)
+    local currentPos = { x = unitX, y = unitY, z = unitZ }
+
+    -- If this is the first check, just store the position
+    if not STATE.orbit.lastPosition then
+        STATE.orbit.lastPosition = currentPos
+        return
+    end
+
+    -- Check if unit has moved
+    local epsilon = 0.1  -- Small threshold to account for floating point precision
+    local hasMoved = math.abs(currentPos.x - STATE.orbit.lastPosition.x) > epsilon or
+            math.abs(currentPos.y - STATE.orbit.lastPosition.y) > epsilon or
+            math.abs(currentPos.z - STATE.orbit.lastPosition.z) > epsilon
+
+    if hasMoved then
+        -- Unit is moving, reset timer
+        STATE.orbit.stationaryTimer = nil
+
+        -- If auto-orbit is active, transition back to FPS
+        if STATE.orbit.autoOrbitActive then
+            STATE.orbit.autoOrbitActive = false
+
+            -- Begin transition from orbit back to FPS mode
+            -- We need to do this manually as we're already in "fps" tracking mode
+            STATE.tracking.modeTransition = true
+            STATE.tracking.transitionStartTime = Spring.GetTimer()
+
+            -- Restore original transition factor
+            if STATE.orbit.originalTransitionFactor then
+                CONFIG.SMOOTHING.MODE_TRANSITION_FACTOR = STATE.orbit.originalTransitionFactor
+                STATE.orbit.originalTransitionFactor = nil
+            end
+
+            -- Store current camera position as last position to smooth from
+            local camState = Spring.GetCameraState()
+            STATE.tracking.lastCamPos = { x = camState.px, y = camState.py, z = camState.pz }
+            STATE.tracking.lastCamDir = { x = camState.dx, y = camState.dy, z = camState.dz }
+            STATE.tracking.lastRotation = { rx = camState.rx, ry = camState.ry, rz = camState.rz }
+        end
+    else
+        -- Unit is stationary
+        if not STATE.orbit.stationaryTimer then
+            -- Start timer
+            STATE.orbit.stationaryTimer = Spring.GetTimer()
+        else
+            -- Check if we've been stationary long enough
+            local now = Spring.GetTimer()
+            local elapsed = Spring.DiffTimers(now, STATE.orbit.stationaryTimer)
+
+            if elapsed > CONFIG.ORBIT.AUTO_ORBIT_DELAY and not STATE.orbit.autoOrbitActive then
+                -- Transition to auto-orbit
+                STATE.orbit.autoOrbitActive = true
+
+                -- Initialize orbit settings with default values
+                local unitHeight = Util.getUnitHeight(STATE.tracking.unitID)
+                CONFIG.ORBIT.HEIGHT = unitHeight * CONFIG.ORBIT.DEFAULT_HEIGHT_FACTOR
+                CONFIG.ORBIT.DISTANCE = CONFIG.ORBIT.DEFAULT_DISTANCE
+                CONFIG.ORBIT.SPEED = CONFIG.ORBIT.DEFAULT_SPEED
+
+                -- Initialize orbit angle based on current camera position
+                local camState = Spring.GetCameraState()
+                STATE.orbit.angle = math.atan2(camState.px - unitX, camState.pz - unitZ)
+
+                -- Begin transition from FPS to orbit
+                -- We need to do this manually as we're already in "fps" tracking mode
+                STATE.tracking.modeTransition = true
+                STATE.tracking.transitionStartTime = Spring.GetTimer()
+
+                -- Store current camera position as last position to smooth from
+                STATE.tracking.lastCamPos = { x = camState.px, y = camState.py, z = camState.pz }
+                STATE.tracking.lastCamDir = { x = camState.dx, y = camState.dy, z = camState.dz }
+                STATE.tracking.lastRotation = { rx = camState.rx, ry = camState.ry, rz = camState.rz }
+
+                -- Store original transition factor and use a more delayed transition
+                STATE.orbit.originalTransitionFactor = CONFIG.SMOOTHING.MODE_TRANSITION_FACTOR
+                CONFIG.SMOOTHING.MODE_TRANSITION_FACTOR = CONFIG.SMOOTHING.MODE_TRANSITION_FACTOR / CONFIG.ORBIT.AUTO_ORBIT_SMOOTHING_FACTOR
+            end
+
+        end
+        -- Update last position
+        STATE.orbit.lastPosition = currentPos
+    end
+
+    -- Handle actual auto-orbit camera update
+    function OrbitingCamera.updateAutoOrbit()
+        if not STATE.orbit.autoOrbitActive or STATE.tracking.mode ~= 'fps' or not STATE.tracking.unitID then
+            return
+        end
+
+        -- Auto-orbit uses the same update logic as manual orbit, but without changing tracking.mode
+        -- Get unit position
+        local unitX, unitY, unitZ = Spring.GetUnitPosition(STATE.tracking.unitID)
+
+        -- Update orbit angle
+        STATE.orbit.angle = STATE.orbit.angle + CONFIG.ORBIT.SPEED
+
+        -- Calculate camera position on the orbit circle
+        local camX = unitX + CONFIG.ORBIT.DISTANCE * math.sin(STATE.orbit.angle)
+        local camY = unitY + CONFIG.ORBIT.HEIGHT
+        local camZ = unitZ + CONFIG.ORBIT.DISTANCE * math.cos(STATE.orbit.angle)
+
+        -- Create camera state looking at the unit
+        local camPos = { x = camX, y = camY, z = camZ }
+        local targetPos = { x = unitX, y = unitY, z = unitZ }
+        local lookDir = Util.calculateLookAtPoint(camPos, targetPos)
+
+        -- Determine smoothing factor - use a very smooth transition for auto-orbit
+        local smoothFactor = CONFIG.SMOOTHING.MODE_TRANSITION_FACTOR / CONFIG.ORBIT.AUTO_ORBIT_SMOOTHING_FACTOR
+        local rotFactor = CONFIG.SMOOTHING.MODE_TRANSITION_FACTOR / CONFIG.ORBIT.AUTO_ORBIT_SMOOTHING_FACTOR
+
+        -- Prepare camera state patch with smoothed values
+        local camStatePatch = {
+            mode = 0,
+            name = "fps",
+
+            -- Smooth camera position
+            px = Util.smoothStep(STATE.tracking.lastCamPos.x, camX, smoothFactor),
+            py = Util.smoothStep(STATE.tracking.lastCamPos.y, camY, smoothFactor),
+            pz = Util.smoothStep(STATE.tracking.lastCamPos.z, camZ, smoothFactor),
+
+            -- Smooth direction
+            dx = Util.smoothStep(STATE.tracking.lastCamDir.x, lookDir.dx, smoothFactor),
+            dy = Util.smoothStep(STATE.tracking.lastCamDir.y, lookDir.dy, smoothFactor),
+            dz = Util.smoothStep(STATE.tracking.lastCamDir.z, lookDir.dz, smoothFactor),
+
+            -- Smooth rotation
+            rx = Util.smoothStep(STATE.tracking.lastRotation.rx, lookDir.rx, rotFactor),
+            ry = Util.smoothStepAngle(STATE.tracking.lastRotation.ry, lookDir.ry, rotFactor),
+            rz = 0
+        }
+
+        -- Update last values for next frame
+        STATE.tracking.lastCamPos.x = camStatePatch.px
+        STATE.tracking.lastCamPos.y = camStatePatch.py
+        STATE.tracking.lastCamPos.z = camStatePatch.pz
+        STATE.tracking.lastCamDir.x = camStatePatch.dx
+        STATE.tracking.lastCamDir.y = camStatePatch.dy
+        STATE.tracking.lastCamDir.z = camStatePatch.dz
+        STATE.tracking.lastRotation.rx = camStatePatch.rx
+        STATE.tracking.lastRotation.ry = camStatePatch.ry
+
+        -- Apply camera state
+        Spring.SetCameraState(camStatePatch, 0)
+    end
+
 end
 
 --------------------------------------------------------------------------------
@@ -973,9 +1533,12 @@ function CameraAnchor.focus(index)
         return true
     end
 
-    -- Cancel tracking if active
+    -- Store the anchor we're moving to
+    STATE.lastUsedAnchor = index
+
+    -- Always disable any tracking when moving to an anchor
     if STATE.tracking.mode then
-        Spring.Echo(STATE.tracking.mode .. " tracking disabled when moving to anchor")
+        -- Disable tracking without planning to restore it
         Util.disableTracking()
     end
 
@@ -1008,7 +1571,6 @@ function CameraAnchor.focus(index)
     -- Start transition
     CameraTransition.start(STATE.anchors[index], CONFIG.TRANSITION.DURATION)
     STATE.transition.currentAnchorIndex = index
-
     Spring.Echo("Loading camera anchor: " .. index)
     return true
 end
@@ -1027,6 +1589,96 @@ function CameraAnchor.adjustDuration(amount)
     else
         Spring.Echo("Transition duration: " .. CONFIG.TRANSITION.DURATION .. "s")
     end
+end
+
+function CameraAnchor.focusAndTrack(index)
+    if not STATE.enabled then
+        Spring.Echo("Camera Suite must be enabled first")
+        return true
+    end
+
+    index = tonumber(index)
+    if not (index and index >= 0 and index <= 9 and STATE.anchors[index]) then
+        Spring.Echo("Invalid or unset camera anchor: " .. (index or "nil"))
+        return true
+    end
+
+    -- Store the anchor we're moving to
+    STATE.lastUsedAnchor = index
+
+    -- Get the selected unit to track
+    local selectedUnits = Spring.GetSelectedUnits()
+    if #selectedUnits == 0 then
+        Spring.Echo("No unit selected for tracking during anchor transition")
+        -- Just do a normal anchor transition
+        return CameraAnchor.focus(index)
+    end
+
+    local unitID = selectedUnits[1]
+    if not Spring.ValidUnitID(unitID) then
+        Spring.Echo("Invalid unit for tracking during anchor transition")
+        -- Just do a normal anchor transition
+        return CameraAnchor.focus(index)
+    end
+
+    -- Cancel any in-progress transitions
+    if STATE.transition.active then
+        STATE.transition.active = false
+        Spring.Echo("Canceled previous transition")
+    end
+
+    -- Disable any existing tracking modes to avoid conflicts
+    if STATE.tracking.mode then
+        Util.disableTracking()
+    end
+
+    -- Create a specialized transition that maintains focus on the unit
+    local startState = Spring.GetCameraState()
+    local endState = Util.deepCopy(STATE.anchors[index])
+
+    -- Ensure both states are in FPS mode
+    startState.mode = 0
+    startState.name = "fps"
+    endState.mode = 0
+    endState.name = "fps"
+
+    -- Generate transition steps that keep the camera looking at the unit
+    local numSteps = math.max(2, math.floor(CONFIG.TRANSITION.DURATION * CONFIG.TRANSITION.STEPS_PER_SECOND))
+
+    -- Create transition steps with special handling to look at the unit
+    local steps = {}
+
+    for i = 1, numSteps do
+        local t = (i - 1) / (numSteps - 1)
+        local easedT = Util.easeInOutCubic(t)
+
+        -- Interpolate position only
+        local statePatch = {
+            mode = 0,
+            name = "fps",
+            px = Util.lerp(startState.px, endState.px, easedT),
+            py = Util.lerp(startState.py, endState.py, easedT),
+            pz = Util.lerp(startState.pz, endState.pz, easedT)
+        }
+
+        steps[i] = statePatch
+    end
+
+    -- Set up the transition
+    STATE.transition.steps = steps
+    STATE.transition.currentStepIndex = 1
+    STATE.transition.startTime = Spring.GetTimer()
+    STATE.transition.active = true
+    STATE.transition.currentAnchorIndex = index
+
+    -- Enable tracking camera on the unit
+    STATE.tracking.mode = 'tracking_camera'
+    STATE.tracking.unitID = unitID
+    STATE.tracking.lastCamDir = { x = 0, y = 0, z = 0 }
+    STATE.tracking.lastRotation = { rx = 0, ry = 0, rz = 0 }
+
+    Spring.Echo("Moving to anchor " .. index .. " while tracking unit " .. unitID)
+    return true
 end
 
 --------------------------------------------------------------------------------
@@ -1061,7 +1713,7 @@ function widget:SelectionChanged(selectedUnits)
     -- Update tracking if it's enabled
     if STATE.tracking.mode and STATE.tracking.unitID ~= unitID then
         -- Save current offsets for the previous unit if in FPS mode
-        if STATE.tracking.mode == 'fps' and STATE.tracking.unitID then
+        if (STATE.tracking.mode == 'fps' or STATE.tracking.mode == 'fixed_point') and STATE.tracking.unitID then
             STATE.tracking.unitOffsets[STATE.tracking.unitID] = {
                 height = CONFIG.FPS.HEIGHT_OFFSET,
                 forward = CONFIG.FPS.FORWARD_OFFSET,
@@ -1073,13 +1725,13 @@ function widget:SelectionChanged(selectedUnits)
         STATE.tracking.unitID = unitID
 
         -- For FPS mode, load appropriate offsets
-        if STATE.tracking.mode == 'fps' then
+        if STATE.tracking.mode == 'fps' or STATE.tracking.mode == 'fixed_point' then
             if STATE.tracking.unitOffsets[unitID] then
                 -- Use saved offsets
                 CONFIG.FPS.HEIGHT_OFFSET = STATE.tracking.unitOffsets[unitID].height
                 CONFIG.FPS.FORWARD_OFFSET = STATE.tracking.unitOffsets[unitID].forward
                 CONFIG.FPS.SIDE_OFFSET = STATE.tracking.unitOffsets[unitID].side
-                Spring.Echo("FPS camera switched to unit " .. unitID .. " with saved offsets")
+                Spring.Echo("Camera switched to unit " .. unitID .. " with saved offsets")
             else
                 -- Get new default height for this unit
                 local unitHeight = Util.getUnitHeight(unitID)
@@ -1095,10 +1747,10 @@ function widget:SelectionChanged(selectedUnits)
                     side = CONFIG.FPS.SIDE_OFFSET
                 }
 
-                Spring.Echo("FPS camera switched to unit " .. unitID .. " with new offsets")
+                Spring.Echo("Camera switched to unit " .. unitID .. " with new offsets")
             end
         else
-            Spring.Echo("Stationary tracking switched to unit " .. unitID)
+            Spring.Echo("Tracking switched to unit " .. unitID)
         end
     end
 end
@@ -1115,7 +1767,7 @@ function widget:Update()
 
         -- If grace period expired (1 second), disable tracking
         if elapsed > 1.0 then
-            Util.disableTracking(STATE.tracking.stationaryCamState)
+            Util.disableTracking()
             Spring.Echo("Camera tracking disabled - no units selected (after grace period)")
         end
     end
@@ -1123,63 +1775,100 @@ function widget:Update()
     -- If we're in a mode transition but not tracking any unit,
     -- then we're transitioning back to normal camera from a tracking mode
     if STATE.tracking.modeTransition and not STATE.tracking.mode then
-        local currentState = Spring.GetCameraState()
-
-        -- Get transition factor
-        local transitionFactor = CONFIG.SMOOTHING.MODE_TRANSITION_FACTOR
-
-        -- If we have a target state to transition to (from stationary mode)
-        if STATE.tracking.transitionTargetState then
-            -- Smoothly transition to the target state
-            local targetState = STATE.tracking.transitionTargetState
-
-            -- Apply smoothing to position
-            currentState.px = Util.smoothStep(currentState.px, targetState.px, transitionFactor)
-            currentState.py = Util.smoothStep(currentState.py, targetState.py, transitionFactor)
-            currentState.pz = Util.smoothStep(currentState.pz, targetState.pz, transitionFactor)
-
-            -- Apply smoothing to direction
-            currentState.dx = Util.smoothStep(currentState.dx, targetState.dx, transitionFactor)
-            currentState.dy = Util.smoothStep(currentState.dy, targetState.dy, transitionFactor)
-            currentState.dz = Util.smoothStep(currentState.dz, targetState.dz, transitionFactor)
-
-            -- Apply smoothing to rotation
-            currentState.rx = Util.smoothStep(currentState.rx, targetState.rx, transitionFactor)
-            currentState.ry = Util.smoothStepAngle(currentState.ry, targetState.ry, transitionFactor)
-            currentState.rz = Util.smoothStep(currentState.rz, targetState.rz, transitionFactor)
-
-            -- Apply updated state
-            Spring.SetCameraState(currentState, 0)
-
-            -- Check if we should end the transition (after ~1 second)
-            local now = Spring.GetTimer()
-            local elapsed = Spring.DiffTimers(now, STATE.tracking.transitionStartTime)
-            if elapsed > 1.0 then
-                STATE.tracking.modeTransition = false
-                STATE.tracking.transitionTargetState = nil
-
-                -- Final smoothing is done, apply exact target state
-                Spring.SetCameraState(targetState, 0)
-            end
-        else
-            -- We're transitioning to free camera
-            -- Just let the transition time out
-            local now = Spring.GetTimer()
-            local elapsed = Spring.DiffTimers(now, STATE.tracking.transitionStartTime)
-            if elapsed > 1.0 then
-                STATE.tracking.modeTransition = false
-            end
+        -- We're transitioning to free camera
+        -- Just let the transition time out
+        local now = Spring.GetTimer()
+        local elapsed = Spring.DiffTimers(now, STATE.tracking.transitionStartTime)
+        if elapsed > 1.0 then
+            STATE.tracking.modeTransition = false
         end
     end
 
-    -- Handle smooth transitions between anchors
-    CameraTransition.update()
+    -- During special transition + tracking, handle both components
+    if STATE.transition.active then
+        -- Update transition position
+        local now = Spring.GetTimer()
 
-    -- Handle camera tracking updates
-    if STATE.tracking.mode == 'fps' then
-        FPSCamera.update()
-    elseif STATE.tracking.mode == 'stationary' then
-        StationaryTracking.update()
+        -- Calculate current progress
+        local elapsed = Spring.DiffTimers(now, STATE.transition.startTime)
+        local targetProgress = math.min(elapsed / CONFIG.TRANSITION.DURATION, 1.0)
+
+        -- Determine which position step to use
+        local totalSteps = #STATE.transition.steps
+        local targetStep = math.max(1, math.min(totalSteps, math.ceil(targetProgress * totalSteps)))
+
+        -- Only update position if we need to move to a new step
+        if targetStep > STATE.transition.currentStepIndex then
+            STATE.transition.currentStepIndex = targetStep
+
+            -- Get the position state for this step
+            local posState = STATE.transition.steps[STATE.transition.currentStepIndex]
+
+            -- Check if we've reached the end
+            if STATE.transition.currentStepIndex >= totalSteps then
+                STATE.transition.active = false
+                STATE.transition.currentAnchorIndex = nil
+            end
+
+            -- Only update position, not direction (tracking will handle that)
+            if STATE.tracking.mode == 'tracking_camera' and STATE.tracking.unitID then
+                -- Get unit position for look direction
+                local unitX, unitY, unitZ = Spring.GetUnitPosition(STATE.tracking.unitID)
+                local targetPos = { x = unitX, y = unitY, z = unitZ }
+
+                -- Get current (transitioning) camera position
+                local camPos = { x = posState.px, y = posState.py, z = posState.pz }
+
+                -- Calculate look direction to the unit
+                local lookDir = Util.calculateLookAtPoint(camPos, targetPos)
+
+                -- Create complete camera state with position and look direction
+                local combinedState = {
+                    mode = 0,
+                    name = "fps",
+                    px = camPos.x,
+                    py = camPos.y,
+                    pz = camPos.z,
+                    dx = lookDir.dx,
+                    dy = lookDir.dy,
+                    dz = lookDir.dz,
+                    rx = lookDir.rx,
+                    ry = lookDir.ry,
+                    rz = 0
+                }
+
+                -- Apply combined state
+                Spring.SetCameraState(combinedState, 0)
+
+                -- Update last values for smooth tracking
+                STATE.tracking.lastCamDir = { x = lookDir.dx, y = lookDir.dy, z = lookDir.dz }
+                STATE.tracking.lastRotation = { rx = lookDir.rx, ry = lookDir.ry, rz = 0 }
+            else
+                -- If not tracking, just apply position
+                Spring.SetCameraState(posState, 0)
+            end
+        end
+    else
+        -- Normal transition behavior when not in special mode
+        CameraTransition.update()
+
+        -- Normal tracking behavior when not in special transition
+        if STATE.tracking.mode == 'fps' or STATE.tracking.mode == 'fixed_point' then
+            -- Check for auto-orbit
+            OrbitingCamera.checkUnitMovement()
+
+            if STATE.orbit.autoOrbitActive then
+                -- Handle auto-orbit camera update
+                OrbitingCamera.updateAutoOrbit()
+            else
+                -- Normal FPS update
+                FPSCamera.update()
+            end
+        elseif STATE.tracking.mode == 'tracking_camera' then
+            TrackingCamera.update()
+        elseif STATE.tracking.mode == 'orbit' then
+            OrbitingCamera.update()
+        end
     end
 
     -- Check for delayed position storage callback
@@ -1197,68 +1886,100 @@ function widget:Initialize()
     STATE.enabled = false
 
     -- Register widget control command
-    widgetHandler:AddAction("toggle_camera_suite", function()
+    widgetHandler.actionHandler:AddAction(self, "toggle_camera_suite", function()
         return WidgetControl.toggle()
     end, nil, 'p')
 
     -- Register camera anchor commands
-    widgetHandler:AddAction("set_smooth_camera_anchor", function(_, index)
+    widgetHandler.actionHandler:AddAction(self, "set_smooth_camera_anchor", function(_, index)
         return CameraAnchor.set(index)
     end, nil, 'p')
 
-    widgetHandler:AddAction("focus_smooth_camera_anchor", function(_, index)
+    widgetHandler.actionHandler:AddAction(self, "focus_smooth_camera_anchor", function(_, index)
         return CameraAnchor.focus(index)
     end, nil, 'p')
 
-    widgetHandler:AddAction("decrease_smooth_camera_duration", function()
+    widgetHandler.actionHandler:AddAction(self, "decrease_smooth_camera_duration", function()
         CameraAnchor.adjustDuration(-1)
     end, nil, 'p')
 
-    widgetHandler:AddAction("increase_smooth_camera_duration", function()
+    widgetHandler.actionHandler:AddAction(self, "increase_smooth_camera_duration", function()
         CameraAnchor.adjustDuration(1)
     end, nil, 'p')
 
     -- Register FPS camera commands
-    widgetHandler:AddAction("toggle_fps_camera", function()
+    widgetHandler.actionHandler:AddAction(self, "toggle_fps_camera", function()
         return FPSCamera.toggle()
     end, nil, 'p')
 
-    widgetHandler:AddAction("fps_height_offset_up", function()
+    widgetHandler.actionHandler:AddAction(self, "fps_height_offset_up", function()
         FPSCamera.adjustOffset("height", 10)
     end, nil, 'pR')
 
-    widgetHandler:AddAction("fps_height_offset_down", function()
+    widgetHandler.actionHandler:AddAction(self, "fps_height_offset_down", function()
         FPSCamera.adjustOffset("height", -10)
     end, nil, 'pR')
 
-    widgetHandler:AddAction("fps_forward_offset_up", function()
+    widgetHandler.actionHandler:AddAction(self, "fps_forward_offset_up", function()
         FPSCamera.adjustOffset("forward", 10)
     end, nil, 'pR')
 
-    widgetHandler:AddAction("fps_forward_offset_down", function()
+    widgetHandler.actionHandler:AddAction(self, "fps_forward_offset_down", function()
         FPSCamera.adjustOffset("forward", -10)
     end, nil, 'pR')
 
-    widgetHandler:AddAction("fps_side_offset_right", function()
+    widgetHandler.actionHandler:AddAction(self, "fps_side_offset_right", function()
         FPSCamera.adjustOffset("side", 10)
     end, nil, 'pR')
 
-    widgetHandler:AddAction("fps_side_offset_left", function()
+    widgetHandler.actionHandler:AddAction(self, "fps_side_offset_left", function()
         FPSCamera.adjustOffset("side", -10)
     end, nil, 'pR')
 
-    widgetHandler:AddAction("fps_toggle_free_cam", function()
+    widgetHandler.actionHandler:AddAction(self, "fps_toggle_free_cam", function()
         FPSCamera.toggleFreeCam()
     end, nil, 'p')
 
-    widgetHandler:AddAction("fps_reset_defaults", function()
+    widgetHandler.actionHandler:AddAction(self, "fps_reset_defaults", function()
         FPSCamera.resetOffsets()
     end, nil, 'p')
 
-    -- Register stationary tracking command
-    widgetHandler:AddAction("toggle_stationary_tracking", function()
-        return StationaryTracking.toggle()
+    widgetHandler.actionHandler:AddAction(self, "clear_fixed_look_point", function()
+        FPSCamera.clearFixedLookPoint()
     end, nil, 'p')
+
+    -- Register Tracking Camera command
+    widgetHandler.actionHandler:AddAction(self, "toggle_tracking_camera", function()
+        return TrackingCamera.toggle()
+    end, nil, 'p')
+
+    widgetHandler.actionHandler:AddAction(self, "focus_anchor_and_track", function(_, index)
+        return CameraAnchor.focusAndTrack(index)
+    end, nil, 'p')
+
+    -- Register Orbiting Camera commands
+    widgetHandler.actionHandler:AddAction(self, "toggle_orbiting_camera", function()
+        OrbitingCamera.toggle()
+    end, nil, 'p')
+
+    widgetHandler.actionHandler:AddAction(self, "orbit_speed_up", function()
+        OrbitingCamera.adjustSpeed(0.0001)
+    end, nil, 'pR')
+
+    widgetHandler.actionHandler:AddAction(self, "orbit_speed_down", function()
+        OrbitingCamera.adjustSpeed(-0.0001)
+    end, nil, 'pR')
+
+    widgetHandler.actionHandler:AddAction(self, "orbit_reset_defaults", function()
+        OrbitingCamera.resetSettings()
+    end, nil, 'p')
+
+    Spring.I18N.load({
+        en = {
+            ["ui.orderMenu.set_fixed_look_point"] = "Look point",
+            ["ui.orderMenu.set_fixed_look_point_tooltip"] = "Click on a location to focus camera on while following unit.",
+        }
+    })
 
     Spring.Echo("Camera Suite loaded but disabled. Use /toggle_camera_suite to enable.")
 end
@@ -1267,5 +1988,24 @@ function widget:Shutdown()
     -- Make sure we clean up
     if STATE.enabled then
         WidgetControl.disable()
+    end
+end
+
+function widget:CommandNotify(cmdID, cmdParams, _)
+    if cmdID == CMD_SET_FIXED_LOOK_POINT then
+        return FPSCamera.setFixedLookPoint(cmdParams)
+    end
+    return false
+end
+
+function widget:CommandsChanged()
+    if not STATE.enabled then
+        return
+    end
+
+    local selectedUnits = Spring.GetSelectedUnits()
+    if #selectedUnits > 0 then
+        local customCommands = widgetHandler.customCommands
+        customCommands[#customCommands + 1] = CMD_SET_FIXED_LOOK_POINT_DEFINITION
     end
 end
