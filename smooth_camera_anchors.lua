@@ -41,7 +41,8 @@ local CONFIG = {
         ROTATION_FACTOR = 0.008, -- Lower = smoother but more lag (0.0-1.0)
         FPS_FACTOR = 0.15, -- Specific for FPS mode
         TRACKING_FACTOR = 0.05, -- Specific for Tracking Camera mode
-        MODE_TRANSITION_FACTOR = 0.04  -- For smoothing between camera modes
+        MODE_TRANSITION_FACTOR = 0.04, -- For smoothing between camera modes
+        FREE_CAMERA_FACTOR = 0.05  -- Smoothing factor for free camera mouse movement
     },
 
     ORBIT = {
@@ -51,7 +52,7 @@ local CONFIG = {
         HEIGHT = nil, -- Will be set dynamically based on unit height
         DISTANCE = 300, -- Distance from unit
         SPEED = 0.01, -- Orbit speed in radians per frame
-        AUTO_ORBIT_DELAY = 3, -- Seconds of no movement to trigger auto orbit
+        AUTO_ORBIT_DELAY = 10, -- Seconds of no movement to trigger auto orbit
         AUTO_ORBIT_ENABLED = true, -- Whether auto-orbit is enabled
         AUTO_ORBIT_SMOOTHING_FACTOR = 5
     },
@@ -107,7 +108,16 @@ local STATE = {
         prevMode = nil, -- Previous camera mode
         modeTransition = false, -- Is transitioning between modes
         transitionStartState = nil, -- Start camera state for transition
-        transitionStartTime = nil   -- When transition started
+        transitionStartTime = nil, -- When transition started
+
+        freeCam = {
+            lastMouseX = nil,
+            lastMouseY = nil,
+            targetRx = nil, -- Target rotation X (pitch)
+            targetRy = nil, -- Target rotation Y (yaw)
+            mouseMoveSensitivity = 0.003, -- How sensitive the camera is to mouse movement
+            lastUnitHeading = nil
+        }
     },
 
     -- Delayed actions
@@ -197,6 +207,10 @@ end
 
 -- Normalize angle to be within -pi to pi range
 function Util.normalizeAngle(angle)
+    if angle == nil then
+        return 0 -- Default to 0 if angle is nil
+    end
+
     local twoPi = 2 * math.pi
     angle = angle % twoPi
     if angle > math.pi then
@@ -270,14 +284,29 @@ function Util.disableTracking()
     STATE.orbit.autoOrbitActive = false
     STATE.orbit.stationaryTimer = nil
     STATE.orbit.lastPosition = nil
+
+    -- Clear freeCam state to prevent null pointer exceptions
+    STATE.tracking.freeCam.lastMouseX = nil
+    STATE.tracking.freeCam.lastMouseY = nil
+    STATE.tracking.freeCam.targetRx = nil
+    STATE.tracking.freeCam.targetRy = nil
+    STATE.tracking.freeCam.lastUnitHeading = nil
 end
 
 function Util.smoothStep(current, target, factor)
+    if current == nil or target == nil or factor == nil then
+        return current or target or 0
+    end
     return current + (target - current) * factor
 end
 
 -- Smooth interpolation between two angles
 function Util.smoothStepAngle(current, target, factor)
+    -- Add safety check for nil values
+    if current == nil or target == nil or factor == nil then
+        return current or target or 0 -- Return whichever is not nil, or 0 if both are nil
+    end
+
     -- Normalize both angles to -pi to pi range
     current = Util.normalizeAngle(current)
     target = Util.normalizeAngle(target)
@@ -862,17 +891,85 @@ function FPSCamera.update()
         camStatePatch.ry = Util.smoothStepAngle(STATE.tracking.lastRotation.ry, targetRy, rotFactor)
         camStatePatch.rx = Util.smoothStep(STATE.tracking.lastRotation.rx, targetRx, rotFactor)
         camStatePatch.rz = Util.smoothStep(STATE.tracking.lastRotation.rz, targetRz, rotFactor)
-    else
-        -- ... rest of the original code for free camera mode ...
-        -- In free camera mode, only update position
-        -- Keep rotations from current state
-        camStatePatch.dx = camState.dx
-        camStatePatch.dy = camState.dy
-        camStatePatch.dz = camState.dz
-        camStatePatch.rx = camState.rx
-        camStatePatch.ry = camState.ry
-        camStatePatch.rz = camState.rz
+    else -- Free camera mode
+        -- Get the current unit heading to detect rotation
+        local unitHeading = Spring.GetUnitHeading(STATE.tracking.unitID, true)
 
+        -- Make sure all required states are initialized
+        if STATE.tracking.freeCam.lastMouseX == nil or
+                STATE.tracking.freeCam.targetRx == nil or
+                STATE.tracking.freeCam.targetRy == nil then
+            -- Initialize with current camera rotation on first frame
+            STATE.tracking.freeCam.targetRx = camState.rx
+            STATE.tracking.freeCam.targetRy = camState.ry
+            STATE.tracking.freeCam.lastMouseX, STATE.tracking.freeCam.lastMouseY = Spring.GetMouseState()
+            STATE.tracking.freeCam.lastUnitHeading = unitHeading
+        else
+            -- Check if unit has changed orientation
+            if STATE.tracking.freeCam.lastUnitHeading ~= nil then
+                local headingDiff = unitHeading - STATE.tracking.freeCam.lastUnitHeading
+
+                -- Only adjust if the heading difference is significant (avoid tiny adjustments)
+                if math.abs(headingDiff) > 0.01 then
+                    -- Calculate how much the unit has rotated
+                    headingDiff = Util.normalizeAngle(headingDiff)
+
+                    -- Invert the heading difference to rotate in the correct direction
+                    -- When the unit turns right (positive heading change),
+                    -- the camera needs to rotate left (negative adjustment) to maintain relative position
+                    headingDiff = -headingDiff
+
+                    -- Adjust the target rotation to maintain relative orientation to the unit
+                    STATE.tracking.freeCam.targetRy = Util.normalizeAngle(STATE.tracking.freeCam.targetRy + headingDiff)
+                end
+            end
+
+            -- Update the last heading for next frame
+            STATE.tracking.freeCam.lastUnitHeading = unitHeading
+
+            -- Get current mouse position
+            local mouseX, mouseY = Spring.GetMouseState()
+
+            -- Only update if mouse has moved
+            if mouseX ~= STATE.tracking.freeCam.lastMouseX or mouseY ~= STATE.tracking.freeCam.lastMouseY then
+                -- Calculate delta movement
+                local deltaX = mouseX - STATE.tracking.freeCam.lastMouseX
+                local deltaY = mouseY - STATE.tracking.freeCam.lastMouseY
+
+                -- Update target rotations based on mouse movement
+                STATE.tracking.freeCam.targetRy = STATE.tracking.freeCam.targetRy + deltaX * STATE.tracking.freeCam.mouseMoveSensitivity
+                STATE.tracking.freeCam.targetRx = STATE.tracking.freeCam.targetRx - deltaY * STATE.tracking.freeCam.mouseMoveSensitivity
+
+                -- Normalize yaw angle
+                STATE.tracking.freeCam.targetRy = Util.normalizeAngle(STATE.tracking.freeCam.targetRy)
+
+                -- Remember mouse position for next frame
+                STATE.tracking.freeCam.lastMouseX = mouseX
+                STATE.tracking.freeCam.lastMouseY = mouseY
+            end
+
+            -- Smoothly interpolate current camera rotation toward target rotation
+            -- Add safety checks to prevent nil access
+            if STATE.tracking.lastRotation and STATE.tracking.lastRotation.rx and
+                    STATE.tracking.freeCam.targetRx and CONFIG.SMOOTHING.FREE_CAMERA_FACTOR then
+                camStatePatch.rx = Util.smoothStep(STATE.tracking.lastRotation.rx, STATE.tracking.freeCam.targetRx, CONFIG.SMOOTHING.FREE_CAMERA_FACTOR)
+            else
+                camStatePatch.rx = camState.rx
+            end
+
+            if STATE.tracking.lastRotation and STATE.tracking.lastRotation.ry and
+                    STATE.tracking.freeCam.targetRy and CONFIG.SMOOTHING.FREE_CAMERA_FACTOR then
+                camStatePatch.ry = Util.smoothStepAngle(STATE.tracking.lastRotation.ry, STATE.tracking.freeCam.targetRy, CONFIG.SMOOTHING.FREE_CAMERA_FACTOR)
+            else
+                camStatePatch.ry = camState.ry
+            end
+
+            -- Calculate direction vector from rotation angles
+            local cosRx = math.cos(camStatePatch.rx)
+            camStatePatch.dx = math.sin(camStatePatch.ry) * cosRx
+            camStatePatch.dz = math.cos(camStatePatch.ry) * cosRx
+            camStatePatch.dy = math.sin(camStatePatch.rx)
+        end
     end
 
 
@@ -950,8 +1047,25 @@ function FPSCamera.toggleFreeCam()
     STATE.tracking.inFreeCameraMode = not STATE.tracking.inFreeCameraMode
 
     if STATE.tracking.inFreeCameraMode then
+        -- Initialize with current camera state
+        local camState = Spring.GetCameraState()
+        STATE.tracking.freeCam.targetRx = camState.rx
+        STATE.tracking.freeCam.targetRy = camState.ry
+        STATE.tracking.freeCam.lastMouseX, STATE.tracking.freeCam.lastMouseY = Spring.GetMouseState()
+
+        -- Initialize unit heading tracking
+        if STATE.tracking.unitID and Spring.ValidUnitID(STATE.tracking.unitID) then
+            STATE.tracking.freeCam.lastUnitHeading = Spring.GetUnitHeading(STATE.tracking.unitID, true)
+        end
+
         Spring.Echo("Free camera mode enabled - use mouse to rotate view")
     else
+        -- Clear tracking data when disabling
+        STATE.tracking.freeCam.lastMouseX = nil
+        STATE.tracking.freeCam.lastMouseY = nil
+        STATE.tracking.freeCam.targetRx = nil
+        STATE.tracking.freeCam.targetRy = nil
+        STATE.tracking.freeCam.lastUnitHeading = nil
         Spring.Echo("Free camera mode disabled - view follows unit orientation")
     end
 end
