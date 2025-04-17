@@ -37,7 +37,7 @@ local counterGroups = {
                 id = "pinpointers",
                 alwaysVisible = true,
                 teamWide = true,
-                unitNames = { armtarg = true, cortarg = true, },
+                unitNames = { armtarg = true, cortarg = true, legtarg = true, armfatf = true, corfatf = true, legfatf = true },
                 counterType = COUNTER_TYPE_BASIC,
                 greenThreshold = 3
             },
