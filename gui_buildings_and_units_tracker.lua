@@ -45,7 +45,7 @@ local counterGroups = {
                 id = "nukes",
                 alwaysVisible = false,
                 teamWide = false,
-                unitNames = { armsilo = true, corsilo = true },
+                unitNames = { armsilo = true, corsilo = true, legstarfall = true },
                 counterType = COUNTER_TYPE_STOCKPILE
             },
             {
