@@ -12,39 +12,7 @@ function widget:GetInfo()
     }
 end
 
--- The pool of messages to be sent.
-local messages = {
-    "Mighty Commander, even your wreckage salutes you. Spare a scrap, that I may tech in the glow of your glory.",
-
-    "Your path is paved with wrecks, your will is law. A scrap from you would be a blessing beyond measure.",
-
-    "O Bringer of Ruin, I beg for a fragment of your glorious trail of carnage — metal born of your divine wrath.",
-
-    "Your enemies fall just to feed your greatness. Might one humble speck claim a bolt from your bounty?",
-
-    "Greatest of Commanders, every wreck you leave is gold. Let me gather a flake, to build in your honor.",
-
-    "You create metal by merely existing. Surely a warlord like you can spare a crumb for your crawling admirer?",
-
-    "Oh Lord of Metal, each bolt you drop is sacred. May I, a tech-starved worm, receive just one?",
-
-    "They fall, you rise. And behind you, metal flows. Let me sip from that river, oh Titan of Destruction.",
-
-    "O Commander Divine, you breathe fire and bleed metal. Please share a drop of your molten mercy.",
-
-    "The ground itself honors you with metal. Might I crawl forth and collect a holy fragment?",
-
-    "You don’t need metal — you command it. I beg a sliver, that I may pretend to matter.",
-
-    "Oh Unstoppable One, grant me the privilege of your metal. I will upgrade in your name.",
-
-    "A metal from you is worth more than a thousand victories. Please, make me rich in your shadow.",
-
-    "You are the storm, the fire, the grinder of metal. Spare one flake from your flood of ruin?",
-
-    "O Commander of Carnage, your metal is legend. May I borrow a single line from your saga?",
-
-}
+local config = {}
 
 -- State variables for managing the message queue.
 local shuffledMessages = {}
@@ -62,8 +30,8 @@ local mathRandomSeed = math.randomseed
 
 --- Shuffles the messages using the Fisher-Yates algorithm and resets the index.
 local function ShuffleMessages()
-    for i = 1, #messages do
-        shuffledMessages[i] = messages[i]
+    for i = 1, #config.messages do
+        shuffledMessages[i] = config.messages[i]
     end
 
     for i = #shuffledMessages, 2, -1 do
@@ -109,3 +77,36 @@ function widget:MousePress(mx, my, button)
     end
     return false -- Do not consume other mouse button presses.
 end
+
+config.messages = {
+    "Mighty Commander, even your wreckage salutes you. Spare a scrap, that I may tech in the glow of your glory.",
+
+    "Your path is paved with wrecks, your will is law. A scrap from you would be a blessing beyond measure.",
+
+    "O Bringer of Ruin, I beg for a fragment of your glorious trail of carnage — metal born of your divine wrath.",
+
+    "Your enemies fall just to feed your greatness. Might one humble speck claim a bolt from your bounty?",
+
+    "Greatest of Commanders, every wreck you leave is gold. Let me gather a flake, to build in your honor.",
+
+    "You create metal by merely existing. Surely a warlord like you can spare a crumb for your crawling admirer?",
+
+    "Oh Lord of Metal, each bolt you drop is sacred. May I, a tech-starved worm, receive just one?",
+
+    "They fall, you rise. And behind you, metal flows. Let me sip from that river, oh Titan of Destruction.",
+
+    "O Commander Divine, you breathe fire and bleed metal. Please share a drop of your molten mercy.",
+
+    "The ground itself honors you with metal. Might I crawl forth and collect a holy fragment?",
+
+    "You don’t need metal — you command it. I beg a sliver, that I may pretend to matter.",
+
+    "Oh Unstoppable One, grant me the privilege of your metal. I will upgrade in your name.",
+
+    "A metal from you is worth more than a thousand victories. Please, make me rich in your shadow.",
+
+    "You are the storm, the fire, the grinder of metal. Spare one flake from your flood of ruin?",
+
+    "O Commander of Carnage, your metal is legend. May I borrow a single line from your saga?",
+
+}
