@@ -43,6 +43,24 @@ return {
                 unitNames = { armjuno = true, corjuno = true, },
                 counterType = COUNTER_TYPE_STOCKPILE
             },
+            {
+                id = "spies",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { armspy = true, corspy = true },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+                icon = "armspy"
+            },
+            {
+                id = "skuttles",
+                alwaysVisible = false,
+                teamWide = false,
+                unitNames = { corsktl = true },
+                counterType = COUNTER_TYPE_BASIC,
+                skipWhenSpectating = true,
+                icon = "corsktl"
+            }
         }
     },
     airUnits = {
@@ -97,28 +115,5 @@ return {
                 isGrouped = true,
             },
         }
-    },
-    special = {
-        type = COUNTER_TYPE_HORIZONTAL,
-        counterDefinitions = {
-            {
-                id = "spies",
-                alwaysVisible = false,
-                teamWide = false,
-                unitNames = { armspy = true, corspy = true },
-                counterType = COUNTER_TYPE_BASIC,
-                skipWhenSpectating = true,
-                icon = "armspy"
-            },
-            {
-                id = "skuttles",
-                alwaysVisible = false,
-                teamWide = false,
-                unitNames = { corsktl = true },
-                counterType = COUNTER_TYPE_BASIC,
-                skipWhenSpectating = true,
-                icon = "corsktl"
-            }
-        }
-    },
+    }
 }

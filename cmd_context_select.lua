@@ -77,7 +77,13 @@ local radarAndJammerNames = {
     corhunt = true, -- cor seaplane scout
 }
 
-local specialUnitsQuery, radarsAndJammersQuery, relativeHealthQuery;
+local commanderNames = {
+    armcom = true,
+    corcom = true,
+    legcom = true,
+}
+
+local specialUnitsQuery, radarsAndJammersQuery, relativeHealthQuery, commanderQuery;
 
 local function dump(o)
     if type(o) == 'table' then
@@ -238,7 +244,7 @@ local function SmartSelect()
     cycleBuildings = true
     selectedUnits = GetSelectedUnits()
 
-    sendCommand("select FromMouseC_35+_Not_Building+_ClearSelection_SelectClosestToCursor+")
+    sendCommand("select FromMouseC_20+_Not_Building+_ClearSelection_SelectClosestToCursor+")
     local newSelectedUnits = GetSelectedUnits()
     if #newSelectedUnits > 0 then
         local unitGroup = Spring.GetUnitGroup(newSelectedUnits[1])
@@ -248,14 +254,13 @@ local function SmartSelect()
             sendCommand("select Visible+_InPrevSel+_ClearSelection_SelectAll+", "Selecting visible units of this type")
         end
     else
-        if sendCommand("select FromMouseC_400+_Not_Building_" .. relativeHealthQuery .. "+_ClearSelection_SelectAll+", "Selecting units with relative hp (default <50%)") then
-            if sendCommand("select FromMouseC_400+_Buildoptions_Not_Building+_ClearSelection_SelectNum_1+", "Cycling through nearby builders...") then
-                if sendCommand("select FromMouseC_200+_IdMatches_" .. specialUnitsQuery .. "+_ClearSelection_SelectClosestToCursor+", "Selecting single spybot or skuttle") then
-                    if sendCommand("select FromMouseC_400+_IdMatches_" .. radarsAndJammersQuery .. "+_ClearSelection_SelectAll+", "Selecting nearby radars and jammers") then
+        if sendCommand("select FromMouseC_400+_IdMatches_" .. specialUnitsQuery .. "+_ClearSelection_SelectClosestToCursor+", "Selecting single spybot or skuttle") then
+            if sendCommand("select FromMouseC_500+_Buildoptions_Not_Building+_ClearSelection_SelectNum_1+", "Cycling through nearby builders...") then
+				if sendCommand("select FromMouseC_600+_Not_Building_" .. relativeHealthQuery .. "+_ClearSelection_SelectAll+", "Selecting units with relative hp (default <50%)") then
+                    --if sendCommand("select FromMouseC_400+_IdMatches_" .. radarsAndJammersQuery .. "+_ClearSelection_SelectAll+", "Selecting nearby radars and jammers") then
                         if cycleBuildings then
-                            sendCommand("select AllMap+_Buildoptions_Building+_ClearSelection_SelectNum_1+", "Cycling through labs across the map...")
+                            sendCommand("select AllMap+_IdMatches_" .. commanderQuery .. "+_ClearSelection_SelectNum_1+", "Cycling through commanders")
                         else
-                            debug("Cycling relative hp units...")
                             if #selectedUnits > 0 then
                                 local unitGroup = getBiggestUnitGroup(selectedUnits)
                                 Spring.SelectUnitArray(selectedUnits)
@@ -268,7 +273,7 @@ local function SmartSelect()
                                 end
                             end
                         end
-                    end
+                    --end
                 end
             end
         end
@@ -282,6 +287,7 @@ function widget:Initialize()
 
     specialUnitsQuery = table.concat(tableKeys(specialUnitNames), "_IdMatches_")
     radarsAndJammersQuery = table.concat(tableKeys(radarAndJammerNames), "_IdMatches_")
+    commanderQuery = table.concat(tableKeys(commanderNames), "_IdMatches_")
     relativeHealthQuery = config.selectDamaged
             and "Not_RelativeHealth_" .. config.healthThreshold
             or "RelativeHealth_" .. config.healthThreshold

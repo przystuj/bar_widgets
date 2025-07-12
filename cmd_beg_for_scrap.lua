@@ -1,8 +1,8 @@
 function widget:GetInfo()
     return {
-        name = "Beg For Scrap",
-        desc = "Sends an elaborate message and pings on Mouse Button 5 press. Ensures no repeats until all messages are used.",
-        author = "TurboBarCam Dev",
+        name = "Beg For Metal",
+        desc = "Beg for metal with a single click.",
+        author = "SuperKitowiec",
         date = "July 12, 2025",
         license = "GNU GPL, v2 or later",
         version = "1",
@@ -14,35 +14,35 @@ end
 
 -- The pool of messages to be sent.
 local messages = {
-    "Mighty Commander, even your wreckage salutes you.\nSpare a scrap, that I may tech in the glow of your glory.",
+    "Mighty Commander, even your wreckage salutes you. Spare a scrap, that I may tech in the glow of your glory.",
 
-    "Your path is paved with wrecks, your will is law.\nA scrap from you would be a blessing beyond measure.",
+    "Your path is paved with wrecks, your will is law. A scrap from you would be a blessing beyond measure.",
 
-    "O Bringer of Ruin, I beg for a fragment of your glorious\ntrail of carnage — metal born of your divine wrath.",
+    "O Bringer of Ruin, I beg for a fragment of your glorious trail of carnage — metal born of your divine wrath.",
 
-    "Your enemies fall just to feed your greatness.\nMight one humble speck claim a bolt from your bounty?",
+    "Your enemies fall just to feed your greatness. Might one humble speck claim a bolt from your bounty?",
 
-    "Greatest of Commanders, every wreck you leave is gold.\nLet me gather a flake, to build in your honor.",
+    "Greatest of Commanders, every wreck you leave is gold. Let me gather a flake, to build in your honor.",
 
-    "You create metal by merely existing.\nSurely a warlord like you can spare a crumb for your crawling admirer?",
+    "You create metal by merely existing. Surely a warlord like you can spare a crumb for your crawling admirer?",
 
-    "Oh Lord of Metal, each bolt you drop is sacred.\nMay I, a tech-starved worm, receive just one?",
+    "Oh Lord of Metal, each bolt you drop is sacred. May I, a tech-starved worm, receive just one?",
 
-    "They fall, you rise. And behind you, metal flows.\nLet me sip from that river, oh Titan of Destruction.",
+    "They fall, you rise. And behind you, metal flows. Let me sip from that river, oh Titan of Destruction.",
 
-    "O Commander Divine, you breathe fire and bleed metal.\nPlease share a drop of your molten mercy.",
+    "O Commander Divine, you breathe fire and bleed metal. Please share a drop of your molten mercy.",
 
-    "The ground itself honors you with metal.\nMight I crawl forth and collect a holy fragment?",
+    "The ground itself honors you with metal. Might I crawl forth and collect a holy fragment?",
 
-    "You don’t need metal — you command it.\nI beg a sliver, that I may pretend to matter.",
+    "You don’t need metal — you command it. I beg a sliver, that I may pretend to matter.",
 
-    "Oh Unstoppable One, grant me the privilege of your metal.\nI will upgrade in your name.",
+    "Oh Unstoppable One, grant me the privilege of your metal. I will upgrade in your name.",
 
-    "A metal from you is worth more than a thousand victories.\nPlease, make me rich in your shadow.",
+    "A metal from you is worth more than a thousand victories. Please, make me rich in your shadow.",
 
-    "You are the storm, the fire, the grinder of metal.\nSpare one flake from your flood of ruin?",
+    "You are the storm, the fire, the grinder of metal. Spare one flake from your flood of ruin?",
 
-    "O Commander of Carnage, your metal is legend.\nMay I borrow a single line from your saga?",
+    "O Commander of Carnage, your metal is legend. May I borrow a single line from your saga?",
 
 }
 
@@ -96,6 +96,7 @@ end
 function widget:Initialize()
     mathRandomSeed(osTime())
     ShuffleMessages()
+    widgetHandler.actionHandler:AddAction(self, "beg_for_metal", PerformBegAction, {}, "p")
 end
 
 --- This function is called by the engine on every mouse press.
