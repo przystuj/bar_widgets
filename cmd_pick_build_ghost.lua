@@ -2,15 +2,15 @@ local widget = widget ---@type
 
 function widget:GetInfo()
     return {
-        name      = "Pick Build Ghost",
-        desc      = "Adds a command to prioritize a building from the queue.",
-        author    = "SuperKitowiec",
-        date      = "August 26, 2025",
-        license   = "GNU GPL, v2 or later",
-        version   = 1,
-        layer     = 0,
-        enabled   = true,
-        handler   = true,
+        name = "Pick Build Ghost",
+        desc = "Adds a command to prioritize a building from the queue.",
+        author = "SuperKitowiec",
+        date = "August 26, 2025",
+        license = "GNU GPL, v2 or later",
+        version = 1,
+        layer = 0,
+        enabled = true,
+        handler = true,
     }
 end
 
@@ -52,9 +52,9 @@ local CMD_PRIORITIZE_GHOST_DEFINITION = {
 local HIGHLIGHT_LINE_WIDTH = 3
 local HIGHLIGHT_ALPHA = 0.9
 local COLORS = {
-    green  = {0.2, 1.0, 0.2, HIGHLIGHT_ALPHA},
-    yellow = {1.0, 1.0, 0.2, HIGHLIGHT_ALPHA},
-    red    = {1.0, 0.2, 0.2, HIGHLIGHT_ALPHA},
+    green = { 0.2, 1.0, 0.2, HIGHLIGHT_ALPHA },
+    yellow = { 1.0, 1.0, 0.2, HIGHLIGHT_ALPHA },
+    red = { 1.0, 0.2, 0.2, HIGHLIGHT_ALPHA },
 }
 local MAX_QUEUE_DEPTH = 2000
 local font = gl.LoadFont("fonts/Exo2-SemiBold.otf", 24, 8, 10)
@@ -100,13 +100,13 @@ local function checkBuilder(unitID)
     local queueDepth = spGetUnitCommandCount(unitID)
     if queueDepth and queueDepth > 0 then
         local queue = spGetUnitCommands(unitID, math.min(queueDepth, MAX_QUEUE_DEPTH))
-        for i=1, #queue do
+        for i = 1, #queue do
             local cmd = queue[i]
             if cmd.id < 0 then
                 local myCmd = { id = cmd.id, teamid = spGetUnitTeam(unitID), params = cmd.params }
-                local id = math.abs(cmd.id)..'_'..floor(cmd.params[1])..'_'..floor(cmd.params[3])
+                local id = math.abs(cmd.id) .. '_' .. floor(cmd.params[1]) .. '_' .. floor(cmd.params[3])
                 if createdUnitLocDefID[id] == nil then
-                    if command[id] == nil then command[id] = {id = myCmd, builders = 0} end
+                    if command[id] == nil then command[id] = { id = myCmd, builders = 0 } end
                     if not command[id][unitID] then
                         command[id][unitID] = true
                         command[id].builders = command[id].builders + 1
@@ -152,7 +152,7 @@ local function CacheDefs()
         if udef.isBuilder and not udef.isFactory and udef.buildOptions and udef.buildOptions[1] then
             isBuilder[udefID] = true
             local buildSet = {}
-            for i=1, #udef.buildOptions do buildSet[udef.buildOptions[i]] = true end
+            for i = 1, #udef.buildOptions do buildSet[udef.buildOptions[i]] = true end
             builderBuildOptions[udefID] = buildSet
         end
     end
@@ -171,7 +171,7 @@ local function FindTargetedShapeAtPos(groundPos)
             local udef = UnitDefs[math.abs(cmdData.id.id)]
             if udef then
                 local px, pz = cmdData.id.params[1], cmdData.id.params[3]
-                local footprintX, footprintZ = 20, 20
+                local footprintX, footprintZ = udef.xsize * 4, udef.zsize * 4
                 if (gx > px - footprintX and gx < px + footprintX and gz > pz - footprintZ and gz < pz + footprintZ) then
                     return id
                 end
@@ -226,7 +226,7 @@ end
 
 function widget:Initialize()
     CacheDefs()
-    for i=1, #Spring.GetAllUnits() do
+    for i = 1, #Spring.GetAllUnits() do
         local unitID = Spring.GetAllUnits()[i]
         if isBuilder[spGetUnitDefID(unitID)] then checkBuilder(unitID) end
     end
@@ -264,11 +264,7 @@ function widget:CommandNotify(cmdID, cmdParams)
     local shapeID = FindTargetedShapeAtPos(cmdParams)
     if not shapeID then return true end
 
-    spEcho("Shape id" .. shapeID)
-
     local targetUnitDefID_positive = tonumber(shapeID:match("^(%d+)_"))
-
-    spEcho("targetUnitDefID_positive" .. targetUnitDefID_positive)
 
     local buildersWhoCan = {}
     for _, unitID in ipairs(spGetSelectedUnits()) do
@@ -284,14 +280,10 @@ function widget:CommandNotify(cmdID, cmdParams)
 
     local cmdToExecute = command[shapeID].id
     local mainBuilder = buildersWhoCan[1]
-    spEcho("cmdToExecute.id" .. cmdToExecute.id)
-    -- Fix: Use negative of the absolute unitDefID for build commands
-    -- cmdToExecute.id is already negative, so we need math.abs to get positive unitDefID, then negate it
-    local buildCommandId = -math.abs(cmdToExecute.id)
-    spGiveOrderToUnit(mainBuilder, buildCommandId, cmdToExecute.params, {})
+    spGiveOrderToUnit(mainBuilder, cmdToExecute.id, cmdToExecute.params, {})
 
     for i = 2, #buildersWhoCan do
-        spGiveOrderToUnit(buildersWhoCan[i], CMD.GUARD, {mainBuilder}, {""})
+        spGiveOrderToUnit(buildersWhoCan[i], CMD.GUARD, { mainBuilder }, { "" })
     end
     spEcho(string.format("Prioritizing build of %s.", UnitDefs[targetUnitDefID_positive].translatedHumanName))
     return false -- Command successfully executed and consumed
@@ -304,7 +296,7 @@ function widget:Update(dt)
         lastUpdate = sec
         checkCount = checkCount + 1
         for unitID, _ in pairs(builderCommands) do
-            if (unitID+checkCount) % 30 == 1 and not newBuildCmdUnits[unitID] then
+            if (unitID + checkCount) % 30 == 1 and not newBuildCmdUnits[unitID] then
                 checkBuilder(unitID)
             end
         end
@@ -329,7 +321,8 @@ function widget:DrawWorld()
     local cmd = cmdData.id
     local px, pz = cmd.params[1], cmd.params[3]
     local groundHeight = spGetGroundHeight(px, pz)
-    local radius = 30
+    local udef = UnitDefs[math.abs(cmd.id)]
+    local radius = (udef.xsize + udef.zsize) * 2.5
 
     local r, g, b, a = unpack(COLORS[colorName])
     gl.Color(r, g, b, a)
@@ -337,7 +330,7 @@ function widget:DrawWorld()
 
     gl.BeginEnd(GL.LINE_LOOP, function()
         for i = 0, 32 do
-            local angle = i/32 * 2 * math.pi
+            local angle = i / 32 * 2 * math.pi
             gl.Vertex(px + math.cos(angle) * radius, groundHeight + 1, pz + math.sin(angle) * radius)
         end
     end)
@@ -352,7 +345,7 @@ function widget:DrawScreen()
     local textY = mouseY + 40
 
     font:Begin()
-    font:SetOutlineColor({0,0,0,1})
+    font:SetOutlineColor({ 0, 0, 0, 1 })
     font:SetTextColor(unpack(COLORS[colorName]))
 
     if colorName == "red" then
@@ -365,7 +358,6 @@ function widget:DrawScreen()
     font:End()
 end
 
-
 function widget:UnitCommand(unitID, unitDefID)
     if isBuilder[unitDefID] then
         clearbuilderCommands(unitID)
@@ -374,9 +366,9 @@ function widget:UnitCommand(unitID, unitDefID)
 end
 
 function widget:UnitCreated(unitID, unitDefID)
-    local x,_,z = spGetUnitPosition(unitID)
+    local x, _, z = spGetUnitPosition(unitID)
     if x then
-        local udefLocID = unitDefID..'_'..floor(x)..'_'..floor(z)
+        local udefLocID = unitDefID .. '_' .. floor(x) .. '_' .. floor(z)
         command[udefLocID] = nil
         createdUnitLocDefID[udefLocID] = unitID
         createdUnitID[unitID] = udefLocID
