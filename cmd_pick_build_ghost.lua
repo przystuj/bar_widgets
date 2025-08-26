@@ -7,7 +7,7 @@ function widget:GetInfo()
         author    = "SuperKitowiec",
         date      = "August 26, 2025",
         license   = "GNU GPL, v2 or later",
-        version   = 3,
+        version   = 1,
         layer     = 0,
         enabled   = true,
         handler   = true,
@@ -38,7 +38,7 @@ local I18N = Spring.I18N
 -- Command Definition & Constants
 --------------------------------------------------------------------------------
 
-local CMD_PRIORITIZE_GHOST = 455625 -- Unique Command ID
+local CMD_PRIORITIZE_GHOST = 455650 -- Unique Command ID
 local CMD_PRIORITIZE_GHOST_DEFINITION = {
     id = CMD_PRIORITIZE_GHOST,
     type = CMDTYPE.ICON_MAP,
@@ -46,6 +46,7 @@ local CMD_PRIORITIZE_GHOST_DEFINITION = {
     cursor = 'cursorrepair',
     action = 'prioritize_ghost',
     tooltip = 'Select a build ghost to prioritize. One builder will build it, others will guard.',
+    params = {},
 }
 
 local HIGHLIGHT_LINE_WIDTH = 3
@@ -127,6 +128,21 @@ local function clearUnit(unitID)
     end
 end
 
+local function dump(o)
+    if type(o) == 'table' then
+        local s = '{ '
+        for k, v in pairs(o) do
+            if type(k) ~= 'number' then
+                k = '"' .. k .. '"'
+            end
+            s = s .. '[' .. k .. '] = ' .. dump(v) .. ','
+        end
+        return s .. '} '
+    else
+        return tostring(o)
+    end
+end
+
 --------------------------------------------------------------------------------
 -- UI & Interaction Logic
 --------------------------------------------------------------------------------
@@ -155,7 +171,7 @@ local function FindTargetedShapeAtPos(groundPos)
             local udef = UnitDefs[math.abs(cmdData.id.id)]
             if udef then
                 local px, pz = cmdData.id.params[1], cmdData.id.params[3]
-                local footprintX, footprintZ = udef.footprintX * 4, udef.footprintZ * 4
+                local footprintX, footprintZ = 20, 20
                 if (gx > px - footprintX and gx < px + footprintX and gz > pz - footprintZ and gz < pz + footprintZ) then
                     return id
                 end
@@ -169,7 +185,8 @@ local function GetHoverInfo()
     local _, cmd, _ = spGetActiveCommand()
     if cmd ~= CMD_PRIORITIZE_GHOST then return nil end
 
-    local _, _, groundPos = spTraceScreenRay(spGetMouseState())
+    local mx, my = spGetMouseState()
+    local _, groundPos = spTraceScreenRay(mx, my, true)
     local shapeID = FindTargetedShapeAtPos(groundPos)
     if not shapeID then return nil, "red", nil end
 
@@ -247,7 +264,12 @@ function widget:CommandNotify(cmdID, cmdParams)
     local shapeID = FindTargetedShapeAtPos(cmdParams)
     if not shapeID then return true end
 
+    spEcho("Shape id" .. shapeID)
+
     local targetUnitDefID_positive = tonumber(shapeID:match("^(%d+)_"))
+
+    spEcho("targetUnitDefID_positive" .. targetUnitDefID_positive)
+
     local buildersWhoCan = {}
     for _, unitID in ipairs(spGetSelectedUnits()) do
         if CanBuilderBuild(spGetUnitDefID(unitID), targetUnitDefID_positive) then
@@ -262,12 +284,16 @@ function widget:CommandNotify(cmdID, cmdParams)
 
     local cmdToExecute = command[shapeID].id
     local mainBuilder = buildersWhoCan[1]
-    spGiveOrderToUnit(mainBuilder, cmdToExecute.id, cmdToExecute.params, {""})
+    spEcho("cmdToExecute.id" .. cmdToExecute.id)
+    -- Fix: Use negative of the absolute unitDefID for build commands
+    -- cmdToExecute.id is already negative, so we need math.abs to get positive unitDefID, then negate it
+    local buildCommandId = -math.abs(cmdToExecute.id)
+    spGiveOrderToUnit(mainBuilder, buildCommandId, cmdToExecute.params, {})
 
     for i = 2, #buildersWhoCan do
         spGiveOrderToUnit(buildersWhoCan[i], CMD.GUARD, {mainBuilder}, {""})
     end
-    spEcho(string.format("Prioritizing build of %s.", UnitDefs[targetUnitDefID_positive].humanName))
+    spEcho(string.format("Prioritizing build of %s.", UnitDefs[targetUnitDefID_positive].translatedHumanName))
     return false -- Command successfully executed and consumed
 end
 
@@ -303,8 +329,7 @@ function widget:DrawWorld()
     local cmd = cmdData.id
     local px, pz = cmd.params[1], cmd.params[3]
     local groundHeight = spGetGroundHeight(px, pz)
-    local udef = UnitDefs[math.abs(cmd.id)]
-    local radius = (udef.footprintX + udef.footprintZ) * 2.5
+    local radius = 30
 
     local r, g, b, a = unpack(COLORS[colorName])
     gl.Color(r, g, b, a)
@@ -335,7 +360,7 @@ function widget:DrawScreen()
     else
         local udef = UnitDefs[tonumber(shapeID:match("^(%d+)_"))]
         font:Print(I18N("ui.orderMenu.prioritize_ghost_prioritize"), mouseX, textY + 30, 24, "con")
-        font:Print(udef.humanName, mouseX, textY, 24, "con")
+        font:Print(udef.translatedHumanName, mouseX, textY, 24, "con")
     end
     font:End()
 end
