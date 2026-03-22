@@ -9,7 +9,7 @@
         <link type="text/rcss" href="gui_turbo_buildorders.rcss" />
     </head>
     <body id="quick_restart-main">
-    <div data-model="quick_restart_model" id="main-container">
+    <div data-model="quick_restart_model" id="main-container" oncontextmenu="return false;">
         <handle move_target="#document">
             <div class="header">Turbo Build Orders</div>
         </handle>
@@ -30,7 +30,7 @@
                 <span class="wind-val">{{maxWind}}</span>
             </div>
 
-            <button class="btn-wind" data-event-click="sendWind()">Set Wind ({{minWind}}-{{maxWind}})</button>
+            <button class="btn-wind" data-event-click="sendWind()">Custom Wind ({{minWind}}-{{maxWind}})</button>
             <button class="btn-wind" data-event-click="sendAvgWind()">Average Wind ({{avgWindText}})</button>
             <button class="btn-wind-off" data-event-click="sendDefaultWind()">Default Wind</button>
 
@@ -42,7 +42,10 @@
             <hr />
 
             <div class="timeline-container" style="max-height: 300dp; margin-bottom: 6dp;">
-                <div data-for="item : currentTimeline" class="timeline-item" style="align-items: center;">
+                <div data-for="item : currentTimeline" class="timeline-item" style="align-items: center;"
+                     data-if="!item.hidden"
+                     data-class-highlighted="!item.isCheckpoint && item.humanName == highlightedUnit"
+                     data-event-mouseup="toggleHighlight(item.humanName, item.isCheckpoint)">
                     <span class="run-time">{{item.timeStr}}</span>
                     <span class="run-name" data-if="!item.isCheckpoint">{{item.humanName}}</span>
 

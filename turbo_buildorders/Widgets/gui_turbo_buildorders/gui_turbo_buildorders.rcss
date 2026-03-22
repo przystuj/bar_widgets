@@ -15,6 +15,9 @@ body#quick_restart-runs {
     top: 200dp;
     right: 330dp;
     width: 635dp;
+    height: 550dp;
+    min-width: 205dp;
+    min-height: 150dp;
 }
 
 #main-container, #runs-window {
@@ -23,6 +26,8 @@ body#quick_restart-runs {
     box-shadow: 2dp 2dp 6dp rgba(0,0,0,140);
     display: block;
     box-sizing: border-box;
+    width: 100%;
+    height: 100%;
 }
 
 #main-container {
@@ -30,17 +35,72 @@ body#quick_restart-runs {
 }
 
 #runs-window {
-    border-top: 3dp #4c8cfd;
+    border-top: 3dp #fdc04c;
+    display: flex;
+    flex-direction: column;
 }
 
 .runs-content {
     padding: 10dp;
-    max-height: 500dp;
-    overflow-x: auto;
+    flex-grow: 1;
+    overflow-x: hidden;
     overflow-y: hidden;
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     box-sizing: border-box; /* Ensures padding doesn't cause overflow */
+}
+
+.runs-list {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    margin-bottom: 5dp;
+}
+
+#ignored-header {
+    font-size: 14dp;
+    border-bottom: 1dp #444;
+    margin-bottom: 5dp;
+    text-align: left;
+    padding: 4dp 0dp;
+}
+
+.ignored-panel {
+    width: 100%;
+    margin-top: 5dp;
+    padding-top: 5dp;
+    display: flex;
+    flex-direction: column;
+    max-height: 120dp;
+}
+
+.ignored-list {
+    flex-grow: 1;
+    overflow-y: auto;
+    background-color: rgba(5, 5, 5, 100);
+    padding: 4dp;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6dp;
+}
+
+.ignored-card {
+    padding: 4dp 8dp;
+    background-color: rgba(60, 60, 60, 180);
+    border: 1dp #444;
+    cursor: pointer;
+    font-size: 11dp;
+    color: #ccc;
+    border-radius: 4dp;
+}
+
+.ignored-card:hover {
+    background-color: rgba(100, 100, 100, 255);
+    color: white;
+    border-color: #fdc04c;
 }
 
 handle {
@@ -48,14 +108,24 @@ handle {
     cursor: move;
 }
 
+#resize-handle {
+    width: 16dp;
+    height: 16dp;
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    cursor: nwse-resize;
+    background-color: #fdc04c;
+}
+
 .header {
     font-weight: bold;
-    color: #fdc04c;
     padding: 8dp 10dp;
     border-bottom: 1dp #444;
     text-align: center;
     display: block;
     position: relative; /* For absolute positioning of close button if needed, but we'll try flex first if it's already block */
+    color: #fdc04c;
 }
 
 .btn-close-panel {
@@ -176,10 +246,10 @@ hr {
 }
 
 .wind-val {
-    color: #fdc04c;
     font-weight: bold;
     width: 25dp;
     text-align: right;
+    color: #fdc04c;
 }
 
 /* --- Range Input (Slider) Styling --- */
@@ -230,7 +300,8 @@ input.range slidertrack {
     background-color: rgba(15, 15, 15, 200);
     border: 1dp #444;
     padding: 6dp;
-    display: block;
+    display: flex;
+    flex-direction: column;
     width: 185dp;
     flex-shrink: 0;
 }
@@ -239,15 +310,20 @@ input.range slidertrack {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    color: #4c8cfd;
     font-weight: bold;
-    margin-bottom: 4dp;
+    padding: 2dp 0dp;
+    margin-bottom: 6dp;
 }
 
 .run-id {
-    flex-grow: 1;
-    text-align: center;
-    padding-left: 18dp; /* to balance the remove button if it was on the other side, but here it's on the right */
+    text-align: left;
+    color: #fdc04c;
+}
+
+.run-header-buttons {
+    display: flex;
+    flex-direction: row;
+    gap: 4dp;
 }
 
 .btn-remove {
@@ -263,30 +339,53 @@ input.range slidertrack {
     border-radius: 2dp;
 }
 
+.btn-copy {
+    width: auto;
+    padding-left: 4dp;
+    padding-right: 4dp;
+    height: 18dp;
+    line-height: 16dp;
+    text-align: center;
+    background-color: rgba(60, 60, 60, 200);
+    color: white;
+    font-size: 12dp;
+    cursor: pointer;
+    border-radius: 2dp;
+}
+
+.btn-copy:hover {
+    background-color: rgba(90, 90, 90, 255);
+}
+
 .btn-remove:hover {
     background-color: rgba(200, 50, 50, 255);
 }
 
+.run-wind {
+    font-weight: bold;
+    color: #fdc04c;
+}
+
 .run-resources {
     display: flex;
-    justify-content: space-around;
+    justify-content: space-between;
     border-bottom: 1dp #444;
     padding-bottom: 4dp;
     margin-bottom: 6dp;
 }
 
 .metal {
-    color: #c0c0c0;
     font-weight: bold;
+    color: #c0c0c0;
 }
 
 .energy {
-    color: #ffff00;
     font-weight: bold;
+    color: #ffff00;
 }
 
 .timeline-container {
-    max-height: 300dp;
+    flex-grow: 1;
     overflow-y: auto;
     background-color: rgba(5, 5, 5, 150);
     display: block;
@@ -302,12 +401,22 @@ input.range slidertrack {
     border-bottom: 1dp #333;
     width: 100%;
     box-sizing: border-box;
+    cursor: pointer;
+}
+
+.timeline-item.highlighted {
+    background-color: rgba(253, 192, 76, 60);
+    border-left: 2dp #fdc04c;
+}
+
+.timeline-item:hover {
+    background-color: rgba(255, 255, 255, 20);
 }
 
 .run-time {
-    color: #aaa;
     width: 45dp;
     flex-shrink: 0;
+    color: #aaa;
 }
 
 .run-name {

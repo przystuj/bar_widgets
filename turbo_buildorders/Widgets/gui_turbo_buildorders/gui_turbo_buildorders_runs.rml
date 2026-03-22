@@ -9,37 +9,56 @@
         <link type="text/rcss" href="gui_turbo_buildorders.rcss" />
     </head>
     <body id="quick_restart-runs">
-    <div data-model="quick_restart_model" id="runs-window" data-if="showRunsPanel">
-        <handle move_target="#document">
-            <div class="header" style="color: #4c8cfd; border-bottom: 1dp #444;">
+    <div data-model="quick_restart_model" id="runs-window" oncontextmenu="return false;">
+        <handle move_target="#document" id="header-handle">
+            <div class="header" style="border-bottom: 1dp #444;">
                 History
                 <div class="btn-close-panel" data-event-click="toggleRunsPanel()">X</div>
             </div>
         </handle>
 
         <div class="runs-content">
-            <div data-for="run : savedRuns" class="saved-run-panel">
-                <div class="run-header">
-                    <span class="run-id">Run #{{run.id}}</span>
-                    <div class="btn-remove" data-event-click="removeRun(it_index)">X</div>
-                </div>
-                <div class="run-resources">
-                    <span class="metal">M: {{run.metal}}</span>
-                    <span class="energy">E: {{run.energy}}</span>
-                </div>
-                <div class="timeline-container">
-                    <div data-for="item : run.timeline" class="timeline-item">
-                        <span class="run-time">{{item.timeStr}}</span>
-                        <span class="run-name" data-if="!item.isCheckpoint">{{item.humanName}}</span>
-                        <span class="run-name" data-if="item.isCheckpoint" style="color: #fdc04c; font-weight: bold;">{{item.humanName}}</span>
+            <div class="runs-list">
+                <div data-for="run : savedRuns" class="saved-run-panel">
+                    <div class="run-header">
+                        <span class="run-id">#{{run.id}}</span>
+                        <div class="run-header-buttons">
+                            <div class="btn-copy" data-event-click="copyRun(it_index)" title="Copy to clipboard">Copy to clipboard</div>
+                            <div class="btn-remove" data-event-click="removeRun(it_index)">X</div>
+                        </div>
                     </div>
+                    <div class="run-resources">
+                        <span class="run-wind">Wind: <span data-if="run.minWind == run.maxWind">{{run.minWind}}</span><span data-if="run.minWind != run.maxWind">{{run.minWind}}-{{run.maxWind}}</span></span>
+                        <span class="metal">M: {{run.metal}}</span>
+                        <span class="energy">E: {{run.energy}}</span>
+                    </div>
+                    <div class="timeline-container">
+                        <div data-for="item : run.timeline" class="timeline-item"
+                             data-if="!item.hidden"
+                             data-class-highlighted="!item.isCheckpoint && item.humanName == highlightedUnit"
+                             data-event-mouseup="toggleHighlight(item.humanName, item.isCheckpoint)">
+                            <span class="run-time">{{item.timeStr}}</span>
+                            <span class="run-name" data-if="!item.isCheckpoint">{{item.humanName}}</span>
+                            <span class="run-name" data-if="item.isCheckpoint" style="font-weight: bold; color: #fdc04c;">{{item.humanName}}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div data-if="!hasSavedRun" style="text-align: center; color: #888; padding: 10dp;">
+                    No runs saved yet.
                 </div>
             </div>
 
-            <div data-if="!hasSavedRun" style="text-align: center; color: #888; padding: 10dp;">
-                No runs saved yet.
+            <div class="ignored-panel">
+                <div class="header" id="ignored-header">Ignored</div>
+                <div class="ignored-list">
+                    <div data-for="unit : ignoredUnitsList" class="ignored-card" data-event-click="restoreUnit(unit)">
+                        {{unit}}
+                    </div>
+                </div>
             </div>
         </div>
+        <handle size_target="#document" id="resize-handle" />
     </div>
     </body>
 </rml>

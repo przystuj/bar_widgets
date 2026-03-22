@@ -2,9 +2,9 @@ function gadget:GetInfo()
 	return {
 		name      = "Quick Restart Handler",
 		desc      = "Checkpoint current map state, restart to it, and lock wind",
-		author    = "You",
+		author    = "SuperKitowiec",
 		date      = "2026",
-		license   = "MIT",
+		license   = "GNU GPL, v2 or later",
 		layer     = 0,
 		enabled   = true
 	}
