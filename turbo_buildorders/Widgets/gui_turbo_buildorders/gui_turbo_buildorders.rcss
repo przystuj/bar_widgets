@@ -1,0 +1,356 @@
+body {
+    color: white;
+    position: absolute;
+}
+
+/* Base starting position for the Main panel */
+body#quick_restart-main {
+    top: 200dp;
+    right: 20dp;
+    width: 300dp;
+}
+
+/* Base starting position for the Runs History panel */
+body#quick_restart-runs {
+    top: 200dp;
+    right: 330dp;
+    width: 635dp;
+}
+
+#main-container, #runs-window {
+    background-color: rgba(26, 26, 26, 230);
+    border: 1dp #2c2c2c;
+    box-shadow: 2dp 2dp 6dp rgba(0,0,0,140);
+    display: block;
+    box-sizing: border-box;
+}
+
+#main-container {
+    border-top: 3dp #fdc04c;
+}
+
+#runs-window {
+    border-top: 3dp #4c8cfd;
+}
+
+.runs-content {
+    padding: 10dp;
+    max-height: 500dp;
+    overflow-x: auto;
+    overflow-y: hidden;
+    display: flex;
+    flex-direction: row;
+    box-sizing: border-box; /* Ensures padding doesn't cause overflow */
+}
+
+handle {
+    display: block;
+    cursor: move;
+}
+
+.header {
+    font-weight: bold;
+    color: #fdc04c;
+    padding: 8dp 10dp;
+    border-bottom: 1dp #444;
+    text-align: center;
+    display: block;
+    position: relative; /* For absolute positioning of close button if needed, but we'll try flex first if it's already block */
+}
+
+.btn-close-panel {
+    position: absolute;
+    top: 5dp;
+    right: 10dp;
+    width: 20dp;
+    height: 20dp;
+    line-height: 18dp;
+    text-align: center;
+    background-color: rgba(60, 60, 60, 180);
+    color: #aaa;
+    font-size: 12dp;
+    cursor: pointer;
+    border: 1dp #444;
+}
+
+.btn-close-panel:hover {
+    background-color: rgba(150, 40, 40, 200);
+    color: white;
+}
+
+.content {
+    padding: 10dp;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+}
+
+button {
+    display: block;
+    width: 100%;
+    margin-bottom: 6dp;
+    padding-top: 6dp;
+    padding-bottom: 6dp;
+    text-align: center;
+    background-color: rgba(60, 60, 60, 230);
+    border: 1dp rgba(120, 120, 120, 128);
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+button:hover {
+    background-color: rgba(90, 90, 90, 255);
+}
+
+.btn-restart-small {
+    display: inline-block;
+    width: auto;
+    padding: 2dp 6dp;
+    margin: 0;
+    background-color: rgba(150, 40, 40, 230);
+    border: 1dp rgba(120, 120, 120, 128);
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 11dp;
+}
+
+.btn-restart-small:hover {
+    background-color: rgba(200, 50, 50, 255);
+}
+
+.btn-snapshot {
+    background-color: rgba(40, 100, 150, 230);
+}
+
+.btn-snapshot:hover {
+    background-color: rgba(60, 130, 190, 255);
+}
+
+.btn-save {
+    background-color: rgba(40, 150, 80, 230);
+    font-weight: bold;
+}
+
+.btn-save:hover {
+    background-color: rgba(60, 180, 100, 255);
+}
+
+hr {
+    display: block;
+    margin: 8dp 0dp;
+    border-top: 1dp #444;
+}
+
+/* --- Parameter Controls Styling --- */
+
+.input-row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6dp;
+    padding: 0dp 4dp;
+}
+
+.param-controls {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 5dp;
+}
+
+.param-button {
+    display: inline-block;
+    width: 20dp;
+    height: 20dp;
+    line-height: 20dp;
+    text-align: center;
+    background-color: rgba(60, 60, 60, 230);
+    border: 1dp rgba(120, 120, 120, 128);
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.param-button:hover {
+    background-color: rgba(90, 90, 90, 255);
+}
+
+.wind-val {
+    color: #fdc04c;
+    font-weight: bold;
+    width: 25dp;
+    text-align: right;
+}
+
+/* --- Range Input (Slider) Styling --- */
+input.range {
+    height: 16dp;
+    cursor: pointer;
+    flex-grow: 1;
+    margin: 0 10dp;
+}
+
+input.range sliderbar {
+    background-color: #888;
+    border-radius: 8dp;
+    width: 16dp;
+    height: 16dp;
+}
+
+input.range:hover sliderbar, input.range:active sliderbar {
+    background-color: #fdc04c;
+}
+
+input.range slidertrack {
+    background-color: #333;
+    border-radius: 4dp;
+    height: 4dp;
+    margin-top: 6dp;
+}
+
+/* --- Clock Display Styling --- */
+
+.clock-display {
+    font-size: 24dp;
+    font-weight: bold;
+    color: #ffffff;
+    text-align: center;
+    background-color: rgba(10, 10, 10, 200);
+    border: 1dp #444;
+    padding: 6dp;
+    margin-bottom: 10dp;
+    border-radius: 3dp;
+    display: block;
+}
+
+/* --- Saved Run Viewer Styling --- */
+
+.saved-run-panel {
+    margin-right: 10dp;
+    background-color: rgba(15, 15, 15, 200);
+    border: 1dp #444;
+    padding: 6dp;
+    display: block;
+    width: 185dp;
+    flex-shrink: 0;
+}
+
+.run-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #4c8cfd;
+    font-weight: bold;
+    margin-bottom: 4dp;
+}
+
+.run-id {
+    flex-grow: 1;
+    text-align: center;
+    padding-left: 18dp; /* to balance the remove button if it was on the other side, but here it's on the right */
+}
+
+.btn-remove {
+    width: 18dp;
+    height: 18dp;
+    line-height: 16dp;
+    text-align: center;
+    background-color: rgba(150, 40, 40, 200);
+    color: white;
+    font-size: 11dp;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 2dp;
+}
+
+.btn-remove:hover {
+    background-color: rgba(200, 50, 50, 255);
+}
+
+.run-resources {
+    display: flex;
+    justify-content: space-around;
+    border-bottom: 1dp #444;
+    padding-bottom: 4dp;
+    margin-bottom: 6dp;
+}
+
+.metal {
+    color: #c0c0c0;
+    font-weight: bold;
+}
+
+.energy {
+    color: #ffff00;
+    font-weight: bold;
+}
+
+.timeline-container {
+    max-height: 300dp;
+    overflow-y: auto;
+    background-color: rgba(5, 5, 5, 150);
+    display: block;
+    padding-right: 4dp; /* Creates a slight buffer so text doesn't touch the scrollbar */
+    box-sizing: border-box; /* Prevents the scrollbar from pushing the container width outwards */
+}
+
+.timeline-item {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 4dp 6dp;
+    border-bottom: 1dp #333;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.run-time {
+    color: #aaa;
+    width: 45dp;
+    flex-shrink: 0;
+}
+
+.run-name {
+    color: #fff;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+/* ========================================================================
+   RMLUI CUSTOM SCROLLBAR OVERRIDES
+   (Removes massive layout-breaking default scrollbars)
+   ======================================================================== */
+
+scrollbarvertical {
+    width: 8dp;
+}
+
+scrollbarhorizontal {
+    height: 8dp;
+}
+
+scrollbarvertical slidertrack,
+scrollbarhorizontal slidertrack {
+    background-color: rgba(0, 0, 0, 100);
+}
+
+scrollbarvertical sliderbar,
+scrollbarhorizontal sliderbar {
+    background-color: rgba(100, 100, 100, 200);
+    border-radius: 4dp;
+}
+
+scrollbarvertical sliderbar:hover,
+scrollbarhorizontal sliderbar:hover {
+    background-color: rgba(150, 150, 150, 255);
+}
+
+/* This is the magic fix: Removes the chunky up/down arrows that ruin the width calculations */
+scrollbarvertical sliderarrowdec,
+scrollbarvertical sliderarrowinc,
+scrollbarhorizontal sliderarrowdec,
+scrollbarhorizontal sliderarrowinc {
+    width: 0dp;
+    height: 0dp;
+}
