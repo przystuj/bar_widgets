@@ -16,25 +16,31 @@
 
         <div class="content">
             <div class="clock-display">{{clockTime}}</div>
-            <button class="btn-snapshot" data-event-click="addCheckpoint()">Add Checkpoint</button>
-            <hr />
+            <div data-if="!isReplay && !isSpec">
+                <button class="btn-snapshot" data-event-click="addCheckpoint()">Add Checkpoint</button>
+                <hr />
 
-            <div class="input-row">
-                <span>Min Wind:</span>
-                <input type="range" min="0" max="30" step="1" data-attr-value="minWind" data-event-change="onMinWindChange" />
-                <span class="wind-val">{{minWind}}</span>
+                <div class="input-row">
+                    <span>Min Wind:</span>
+                    <input type="range" min="0" max="30" step="1" data-attr-value="minWind" data-event-change="onMinWindChange" />
+                    <span class="wind-val">{{minWind}}</span>
+                </div>
+                <div class="input-row">
+                    <span>Max Wind:</span>
+                    <input type="range" min="0" max="30" step="1" data-attr-value="maxWind" data-event-change="onMaxWindChange" />
+                    <span class="wind-val">{{maxWind}}</span>
+                </div>
+
+                <button class="btn-wind" data-event-click="sendWind()">Custom Wind ({{minWind}}-{{maxWind}})</button>
+                <button class="btn-wind" data-event-click="sendAvgWind()">Average Wind ({{avgWindText}})</button>
+                <button class="btn-wind-off" data-event-click="sendDefaultWind()">Default Wind</button>
+
+                <hr />
             </div>
-            <div class="input-row">
-                <span>Max Wind:</span>
-                <input type="range" min="0" max="30" step="1" data-attr-value="maxWind" data-event-change="onMaxWindChange" />
-                <span class="wind-val">{{maxWind}}</span>
+
+            <div data-if="isReplay || isSpec" style="text-align: center; color: #aaa; margin-bottom: 10dp;">
+                Tracking selected team
             </div>
-
-            <button class="btn-wind" data-event-click="sendWind()">Custom Wind ({{minWind}}-{{maxWind}})</button>
-            <button class="btn-wind" data-event-click="sendAvgWind()">Average Wind ({{avgWindText}})</button>
-            <button class="btn-wind-off" data-event-click="sendDefaultWind()">Default Wind</button>
-
-            <hr />
 
             <button class="btn-save" data-event-click="saveRun()">Save Run</button>
             <button class="btn-wind" style="margin-top: 6dp;" data-event-click="toggleRunsPanel()">Toggle History Panel</button>

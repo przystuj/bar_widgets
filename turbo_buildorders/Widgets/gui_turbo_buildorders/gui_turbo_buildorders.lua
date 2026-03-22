@@ -15,8 +15,8 @@ function widget:GetInfo()
 end
 
 local spGetGameFrame     = Spring.GetGameFrame
-local spGetTeamResources = Spring.GetTeamResources
 local spGetMyTeamID      = Spring.GetMyTeamID
+local spGetTeamStatsHistory = Spring.GetTeamStatsHistory
 local spSendLuaRulesMsg  = Spring.SendLuaRulesMsg
 local spSetClipboard     = Spring.SetClipboard
 local spEcho             = Spring.Echo
@@ -34,6 +34,10 @@ local nextCheckpointId = 1
 local checkpointsData = {}
 local currentRunTimeline = {}
 local savedRunsHistory = {}
+
+local trackedTeamID = spGetMyTeamID()
+local isReplay = Spring.IsReplay()
+local _, _, isSpec = Spring.GetSpectatingState()
 
 local windFunctions = VFS.Include('common/wind_functions.lua')
 local mapAvgWindStr = windFunctions.getAverageWind()
@@ -64,6 +68,8 @@ end
 
 local modelData
 modelData = {
+	isReplay = isReplay,
+	isSpec = isSpec,
 	minWind = 10,
 	maxWind = 10,
 	avgWindText = mapAvgWindStr,
@@ -137,11 +143,13 @@ modelData = {
 
 	saveRun = function(ev)
 		modelData.updateTimelineVisibilities()
-		local myTeam = spGetMyTeamID()
+		local range = spGetTeamStatsHistory(trackedTeamID)
+		local history = spGetTeamStatsHistory(trackedTeamID, range)
+		local stats = (history and #history > 0) and history[#history] or {}
 		table.insert(savedRunsHistory, 1, {
 			id = #savedRunsHistory + 1,
-			metal = mFloor(spGetTeamResources(myTeam, "metal") or 0),
-			energy = mFloor(spGetTeamResources(myTeam, "energy") or 0),
+			metal = mFloor(1000 + (stats.metalProduced or 0)),
+			energy = mFloor(1000 + (stats.energyProduced or 0)),
 			minWind = dm.minWind,
 			maxWind = dm.maxWind,
 			timeline = CloneTimeline(currentRunTimeline)
@@ -168,7 +176,7 @@ modelData = {
 			end
 		end
 
-		local footer = string.format("\nfinal resources:\nmetal: %d energy: %d", run.metal, run.energy)
+		local footer = string.format("\nfinal produced resources:\nmetal: %d energy: %d", run.metal, run.energy)
 		spSetClipboard(header .. table.concat(timelineLines, "\n") .. footer)
 		spEcho("Run copied to clipboard!")
 	end,
@@ -285,7 +293,7 @@ function widget:Initialize()
 end
 
 function widget:UnitFinished(unitID, unitDefID, unitTeam)
-	if unitTeam ~= spGetMyTeamID() or spGetGameFrame() <= ignoreUnitFinishedFrames then return end
+	if unitTeam ~= trackedTeamID or spGetGameFrame() <= ignoreUnitFinishedFrames then return end
 
 	local ud = UnitDefs[unitDefID]
 	if not ud then return end
@@ -341,6 +349,25 @@ end
 
 function widget:Update()
 	if not dm then return end
+	if isReplay or isSpec then
+		local newTeam = Spring.GetSelectedTeamID()
+		if newTeam and newTeam ~= trackedTeamID then
+			trackedTeamID = newTeam
+			currentRunTimeline = {}
+			dm.currentTimeline = currentRunTimeline
+		end
+		-- Also check if we should update trackedTeamID because of spec state change
+		local _, _, nowSpec = Spring.GetSpectatingState()
+		if nowSpec ~= isSpec then
+			isSpec = nowSpec
+			dm.isSpec = isSpec
+			if not isSpec then
+				trackedTeamID = spGetMyTeamID()
+				currentRunTimeline = {}
+				dm.currentTimeline = currentRunTimeline
+			end
+		end
+	end
 	local newTimeStr = FormatTime(GetVirtualFrame())
 	if dm.clockTime ~= newTimeStr then
 		dm.clockTime = newTimeStr

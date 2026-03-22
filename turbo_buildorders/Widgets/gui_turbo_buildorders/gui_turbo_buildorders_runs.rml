@@ -29,8 +29,8 @@
                     </div>
                     <div class="run-resources">
                         <span class="run-wind">Wind: <span data-if="run.minWind == run.maxWind">{{run.minWind}}</span><span data-if="run.minWind != run.maxWind">{{run.minWind}}-{{run.maxWind}}</span></span>
-                        <span class="metal">M: {{run.metal}}</span>
-                        <span class="energy">E: {{run.energy}}</span>
+                        <span class="metal" title="Total metal produced">M: {{run.metal}}</span>
+                        <span class="energy" title="Total energy produced">E: {{run.energy}}</span>
                     </div>
                     <div class="timeline-container">
                         <div data-for="item : run.timeline" class="timeline-item"

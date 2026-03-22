@@ -6,18 +6,18 @@ body {
 /* Base starting position for the Main panel */
 body#quick_restart-main {
     top: 200dp;
-    right: 20dp;
+    left: 20dp;
     width: 300dp;
 }
 
 /* Base starting position for the Runs History panel */
 body#quick_restart-runs {
     top: 200dp;
-    right: 330dp;
-    width: 635dp;
-    height: 550dp;
-    min-width: 205dp;
-    min-height: 150dp;
+    left: 330dp;
+    width: 460dp;
+    height: 445dp;
+    min-width: 460dp;
+    min-height: 250dp;
 }
 
 #main-container, #runs-window {
@@ -38,25 +38,27 @@ body#quick_restart-runs {
     border-top: 3dp #fdc04c;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 .runs-content {
     padding: 10dp;
     flex-grow: 1;
-    overflow-x: hidden;
-    overflow-y: hidden;
     display: flex;
     flex-direction: column;
     box-sizing: border-box; /* Ensures padding doesn't cause overflow */
+    min-height: 0;
 }
 
 .runs-list {
     flex-grow: 1;
+    flex-shrink: 1;
     display: flex;
     flex-direction: row;
     overflow-x: auto;
     overflow-y: hidden;
     margin-bottom: 5dp;
+    min-height: 0;
 }
 
 #ignored-header {
@@ -74,6 +76,7 @@ body#quick_restart-runs {
     display: flex;
     flex-direction: column;
     max-height: 120dp;
+    flex-shrink: 0;
 }
 
 .ignored-list {
@@ -126,6 +129,7 @@ handle {
     display: block;
     position: relative; /* For absolute positioning of close button if needed, but we'll try flex first if it's already block */
     color: #fdc04c;
+    flex-shrink: 0;
 }
 
 .btn-close-panel {
@@ -313,6 +317,7 @@ input.range slidertrack {
     font-weight: bold;
     padding: 2dp 0dp;
     margin-bottom: 6dp;
+    flex-shrink: 0;
 }
 
 .run-id {
@@ -372,6 +377,7 @@ input.range slidertrack {
     border-bottom: 1dp #444;
     padding-bottom: 4dp;
     margin-bottom: 6dp;
+    flex-shrink: 0;
 }
 
 .metal {
