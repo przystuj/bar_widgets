@@ -252,7 +252,7 @@ function widget:GameFrame(f)
 			isCheckpoint = true,
 			id = cpId,
 			timeStr = "00:00",
-			humanName = "START"
+			humanName = "CHECKPOINT 0"
 		}
 		table.insert(currentRunTimeline, marker)
 

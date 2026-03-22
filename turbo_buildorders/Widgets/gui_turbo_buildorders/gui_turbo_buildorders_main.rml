@@ -47,7 +47,7 @@
                     <span class="run-name" data-if="!item.isCheckpoint">{{item.humanName}}</span>
 
                     <button class="btn-restart-small" data-if="item.isCheckpoint" data-event-click="restartToCheckpoint(item.id)">
-                        &#9664; RESTART TO {{item.humanName}}
+                        {{item.humanName}}
                     </button>
                 </div>
             </div>
