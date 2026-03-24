@@ -32,8 +32,13 @@ local runOffsetFrame = 0
 local ignoreUnitFinishedFrames = 0
 local nextCheckpointId = 1
 local checkpointsData = {}
+local activeCheckpointId = 0
 local currentRunTimeline = {}
 local savedRunsHistory = {}
+
+-- Variables to track baseline engine stats for accurate run calculations
+local engineMetalAtRestart = 0
+local engineEnergyAtRestart = 0
 
 local trackedTeamID = spGetMyTeamID()
 local isReplay = Spring.IsReplay()
@@ -79,6 +84,7 @@ modelData = {
 	showRunsPanel = false,
 	hasSavedRun = false,
 	highlightedUnit = "",
+	highlightedUnitCount = {},
 	ignoredUnits = {},
 	ignoredUnitsList = {},
 
@@ -110,6 +116,10 @@ modelData = {
 		nextCheckpointId = nextCheckpointId + 1
 
 		local vFrame = GetVirtualFrame()
+		local range = spGetTeamStatsHistory(trackedTeamID)
+		local history = spGetTeamStatsHistory(trackedTeamID, range)
+		local stats = (history and #history > 0) and history[#history] or {}
+
 		currentRunTimeline[#currentRunTimeline + 1] = {
 			isCheckpoint = true,
 			id = cpId,
@@ -120,7 +130,9 @@ modelData = {
 
 		checkpointsData[cpId] = {
 			virtualFrame = vFrame,
-			timelineState = CloneTimeline(currentRunTimeline)
+			timelineState = CloneTimeline(currentRunTimeline),
+			metal = stats.metalProduced or 0,
+			energy = stats.energyProduced or 0
 		}
 
 		dm.currentTimeline = currentRunTimeline
@@ -131,6 +143,7 @@ modelData = {
 		local cp = checkpointsData[id]
 		if not cp then return end
 
+		activeCheckpointId = id
 		runOffsetFrame = spGetGameFrame() - cp.virtualFrame
 		ignoreUnitFinishedFrames = spGetGameFrame() + 15
 
@@ -146,14 +159,28 @@ modelData = {
 		local range = spGetTeamStatsHistory(trackedTeamID)
 		local history = spGetTeamStatsHistory(trackedTeamID, range)
 		local stats = (history and #history > 0) and history[#history] or {}
+
+		local cp = checkpointsData[activeCheckpointId] or { metal = 0, energy = 0 }
+
+		-- Calculate resources produced ONLY during the current run attempt
+		local runProducedMetal = (stats.metalProduced or 0) - engineMetalAtRestart
+		local runProducedEnergy = (stats.energyProduced or 0) - engineEnergyAtRestart
+
+		-- Total virtual resources = (What we had at checkpoint) + (What we produced during this attempt)
+		local totalVirtualMetal = cp.metal + mMax(0, runProducedMetal)
+		local totalVirtualEnergy = cp.energy + mMax(0, runProducedEnergy)
+
 		table.insert(savedRunsHistory, 1, {
 			id = #savedRunsHistory + 1,
-			metal = mFloor(1000 + (stats.metalProduced or 0)),
-			energy = mFloor(1000 + (stats.energyProduced or 0)),
+			metal = mFloor(1000 + totalVirtualMetal),
+			energy = mFloor(1000 + totalVirtualEnergy),
 			minWind = dm.minWind,
 			maxWind = dm.maxWind,
 			timeline = CloneTimeline(currentRunTimeline)
 		})
+
+		-- Generate the unit counts array BEFORE binding changes back to the RmlUi data model
+		modelData.refreshUnitCounts()
 
 		dm.savedRuns = savedRunsHistory
 		dm.hasSavedRun = true
@@ -184,6 +211,10 @@ modelData = {
 	removeRun = function(ev, index)
 		if not savedRunsHistory[index + 1] then return end
 		table.remove(savedRunsHistory, index + 1)
+
+		-- Generate the unit counts array BEFORE binding changes back to the RmlUi data model
+		modelData.refreshUnitCounts()
+
 		dm.savedRuns = savedRunsHistory
 		dm.hasSavedRun = (#savedRunsHistory > 0)
 	end,
@@ -233,12 +264,36 @@ modelData = {
 		end
 	end,
 
+	refreshUnitCounts = function(overrideUnit)
+		if not dm then return end
+		local counts = {}
+		local hUnit = (overrideUnit ~= nil) and overrideUnit or dm.highlightedUnit
+
+		for i = 1, #savedRunsHistory do
+			local count = 0
+			if hUnit and hUnit ~= "" then
+				local run = savedRunsHistory[i]
+				for j = 1, #run.timeline do
+					if run.timeline[j].humanName == hUnit and not run.timeline[j].isCheckpoint then
+						count = count + 1
+					end
+				end
+			end
+			counts[i] = count
+		end
+		dm.highlightedUnitCount = counts
+	end,
+
 	toggleHighlight = function(ev, unitName, isCheckpoint)
 		if isCheckpoint or not unitName then return end
 		if ev.parameters.button == 1 then
 			modelData.ignoreUnit(ev, unitName, isCheckpoint)
 		elseif ev.parameters.button == 0 then
-			dm.highlightedUnit = (dm.highlightedUnit == unitName) and "" or unitName
+			local newUnit = (dm.highlightedUnit == unitName) and "" or unitName
+
+			-- Pass the new unit string to pre-calculate the counts before the DOM update
+			modelData.refreshUnitCounts(newUnit)
+			dm.highlightedUnit = newUnit
 		end
 	end,
 
@@ -250,7 +305,11 @@ modelData = {
 		dm.ignoredUnitsList = modelData.ignoredUnitsList
 		dm.ignoredUnits = modelData.ignoredUnits
 
-		if dm.highlightedUnit == unitName then dm.highlightedUnit = "" end
+		if dm.highlightedUnit == unitName then
+			-- Clear the counts before turning off the highlight
+			modelData.refreshUnitCounts("")
+			dm.highlightedUnit = ""
+		end
 		modelData.updateTimelineVisibilities()
 	end,
 
@@ -312,6 +371,14 @@ end
 
 function widget:GameFrame(f)
 	if f == 11 then
+		local range = spGetTeamStatsHistory(trackedTeamID)
+		local history = spGetTeamStatsHistory(trackedTeamID, range)
+		local stats = (history and #history > 0) and history[#history] or {}
+
+		-- Set the engine baseline for the first "run" (match start)
+		engineMetalAtRestart = stats.metalProduced or 0
+		engineEnergyAtRestart = stats.energyProduced or 0
+
 		currentRunTimeline[#currentRunTimeline + 1] = {
 			isCheckpoint = true,
 			id = 0,
@@ -322,7 +389,9 @@ function widget:GameFrame(f)
 
 		checkpointsData[0] = {
 			virtualFrame = 0,
-			timelineState = CloneTimeline(currentRunTimeline)
+			timelineState = CloneTimeline(currentRunTimeline),
+			metal = stats.metalProduced or 0,
+			energy = stats.energyProduced or 0
 		}
 
 		if dm then dm.currentTimeline = currentRunTimeline end
@@ -335,9 +404,18 @@ function widget:AddConsoleLine(msg, priority)
 		local id = tonumber(idStr)
 		local cp = checkpointsData[id]
 		if cp then
+			activeCheckpointId = id
 			runOffsetFrame = spGetGameFrame() - cp.virtualFrame
 			ignoreUnitFinishedFrames = spGetGameFrame() + 15
 			currentRunTimeline = cp.timelineState and CloneTimeline(cp.timelineState) or {}
+
+			-- Update the engine stat baselines exactly when a new run begins via restart
+			local range = spGetTeamStatsHistory(trackedTeamID)
+			local history = spGetTeamStatsHistory(trackedTeamID, range)
+			local stats = (history and #history > 0) and history[#history] or {}
+
+			engineMetalAtRestart = stats.metalProduced or 0
+			engineEnergyAtRestart = stats.energyProduced or 0
 
 			if dm then
 				dm.currentTimeline = currentRunTimeline
@@ -388,5 +466,31 @@ function widget:RecvLuaMsg(message, playerID)
 	if isActive0 or isActive1 then
 		if docMain then (isActive0 and docMain.Show or docMain.Hide)(docMain) end
 		if docRuns then (isActive0 and docRuns.Show or docRuns.Hide)(docRuns) end
+	end
+
+	if string.sub(message, 1, 13) == "TurboRestart " then
+		local id = tonumber(string.sub(message, 14))
+		if id then
+			local cp = checkpointsData[id]
+			if cp then
+				activeCheckpointId = id
+				runOffsetFrame = spGetGameFrame() - cp.virtualFrame
+				ignoreUnitFinishedFrames = spGetGameFrame() + 15
+				currentRunTimeline = cp.timelineState and CloneTimeline(cp.timelineState) or {}
+
+				-- Update engine baselines exactly when the restart occurs
+				local range = spGetTeamStatsHistory(trackedTeamID)
+				local history = spGetTeamStatsHistory(trackedTeamID, range)
+				local stats = (history and #history > 0) and history[#history] or {}
+
+				engineMetalAtRestart = stats.metalProduced or 0
+				engineEnergyAtRestart = stats.energyProduced or 0
+
+				if dm then
+					dm.currentTimeline = currentRunTimeline
+					dm.clockTime = FormatTime(GetVirtualFrame())
+				end
+			end
+		end
 	end
 end

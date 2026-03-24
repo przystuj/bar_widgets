@@ -209,6 +209,7 @@ function gadget:RecvLuaMsg(msg, playerID)
 		if id then
 			RestoreCheckpoint(id)
 			Spring.SendMessageToPlayer(playerID, "State restored to Checkpoint " .. id)
+			Spring.SendLuaUIMsg("TurboRestart " .. id)
 			return true
 		end
 	elseif string.sub(msg, 1, 12) == "!checkpoint " then

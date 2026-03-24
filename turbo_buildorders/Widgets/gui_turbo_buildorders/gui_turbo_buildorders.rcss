@@ -5,18 +5,18 @@ body {
 
 /* Base starting position for the Main panel */
 body#quick_restart-main {
-    top: 40dp;
+    top: 105dp;
     left: 20dp;
     width: 300dp;
 }
 
 /* Base starting position for the Runs History panel */
 body#quick_restart-runs {
-    top: 40dp;
+    top: 105dp;
     left: 330dp;
-    width: 460dp;
+    width: 430dp;
     height: 445dp;
-    min-width: 460dp;
+    min-width: 220dp;
     min-height: 250dp;
 }
 
@@ -397,6 +397,16 @@ input.range slidertrack {
     display: block;
     padding-right: 4dp; /* Creates a slight buffer so text doesn't touch the scrollbar */
     box-sizing: border-box; /* Prevents the scrollbar from pushing the container width outwards */
+}
+
+.run-unit-count {
+    margin-top: 5dp;
+    padding: 4dp;
+    background-color: rgba(40, 100, 150, 100);
+    border-top: 1dp #444;
+    font-size: 11dp;
+    color: #ccc;
+    text-align: center;
 }
 
 .timeline-item {
