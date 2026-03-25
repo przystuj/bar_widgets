@@ -29,32 +29,37 @@ local function TakeCheckpoint(id)
 	-- Save all units
 	local allUnits = Spring.GetAllUnits()
 	for _, uID in ipairs(allUnits) do
-		local defID = Spring.GetUnitDefID(uID)
-		local team = Spring.GetUnitTeam(uID)
-		local x, y, z = Spring.GetUnitPosition(uID)
-		local heading = Spring.GetUnitHeading(uID)
 
-		local _, _, _, _, _, _, ux, uy, uz = Spring.GetUnitDirection(uID)
+		local beingBuilt, buildProgress = Spring.GetUnitIsBeingBuilt(uID)
 
-		local queue = Spring.GetUnitCommands(uID, -1)
-		local savedCmds = {}
-		if queue then
-			for _, cmd in ipairs(queue) do
-				table.insert(savedCmds, {
-					id = cmd.id,
-					params = cmd.params,
-					options = cmd.options
-				})
+		if not beingBuilt or buildProgress >= 1.0 then
+			local defID = Spring.GetUnitDefID(uID)
+			local team = Spring.GetUnitTeam(uID)
+			local x, y, z = Spring.GetUnitPosition(uID)
+			local heading = Spring.GetUnitHeading(uID)
+
+			local _, _, _, _, _, _, ux, uy, uz = Spring.GetUnitDirection(uID)
+
+			local queue = Spring.GetUnitCommands(uID, -1)
+			local savedCmds = {}
+			if queue then
+				for _, cmd in ipairs(queue) do
+					table.insert(savedCmds, {
+						id = cmd.id,
+						params = cmd.params,
+						options = cmd.options
+					})
+				end
 			end
-		end
 
-		local uData = {
-			def=defID, team=team, x=x, y=y, z=z, h=heading,
-			ux = ux or 0, uy = uy or 1, uz = uz or 0,
-			cmds = savedCmds,
-			oldID = uID
-		}
-		table.insert(cp.units, uData)
+			local uData = {
+				def=defID, team=team, x=x, y=y, z=z, h=heading,
+				ux = ux or 0, uy = uy or 1, uz = uz or 0,
+				cmds = savedCmds,
+				oldID = uID
+			}
+			table.insert(cp.units, uData)
+		end
 	end
 
 	-- Save all features
@@ -163,6 +168,7 @@ local function ProcessRestore(frame)
 					for i, p in ipairs(cmd.params) do params[i] = p end
 
 					local cmdID = cmd.id
+					local validCommand = true
 					-- Commands that take a single UnitID as param[1]
 					if cmdID == CMD.GUARD or cmdID == CMD.REPAIR or cmdID == CMD.RECLAIM or cmdID == CMD.LOAD_UNITS then
 						if #params == 1 then
@@ -171,11 +177,15 @@ local function ProcessRestore(frame)
 								params[1] = oldToNewUnit[oldTargetID]
 							elseif oldToNewFeature[oldTargetID] then
 								params[1] = oldToNewFeature[oldTargetID]
+							else
+								validCommand = false
 							end
 						end
 					end
 
-					Spring.GiveOrderToUnit(nuID, cmdID, params, opts)
+					if validCommand then
+						Spring.GiveOrderToUnit(nuID, cmdID, params, opts)
+					end
 				end
 			end
 			u.nuID = nil
