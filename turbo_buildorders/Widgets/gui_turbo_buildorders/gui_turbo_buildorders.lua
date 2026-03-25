@@ -113,7 +113,23 @@ modelData = {
 
 	addCheckpoint = function(ev)
 		local cpId = nextCheckpointId
-		nextCheckpointId = nextCheckpointId + 1
+		local reusingId = false
+
+		-- Look for an existing pending checkpoint to overwrite
+		for i = #currentRunTimeline, 1, -1 do
+			local item = currentRunTimeline[i]
+			if item.isCheckpoint and item.isPending then
+				cpId = item.id
+				reusingId = true
+				-- Remove the old visual entry so we can bump it to the bottom
+				table.remove(currentRunTimeline, i)
+				break
+			end
+		end
+
+		if not reusingId then
+			nextCheckpointId = nextCheckpointId + 1
+		end
 
 		local vFrame = GetVirtualFrame()
 		local range = spGetTeamStatsHistory(trackedTeamID)
@@ -124,8 +140,9 @@ modelData = {
 			isCheckpoint = true,
 			id = cpId,
 			timeStr = FormatTime(vFrame),
-			humanName = "CHECKPOINT " .. cpId,
-			hidden = false
+			humanName = "CHECKPOINT " .. cpId .. (reusingId and " (PENDING)" or ""),
+			hidden = false,
+			isPending = reusingId
 		}
 
 		checkpointsData[cpId] = {
@@ -491,6 +508,85 @@ function widget:RecvLuaMsg(message, playerID)
 					dm.clockTime = FormatTime(GetVirtualFrame())
 				end
 			end
+		end
+	end
+
+	-- Process Smart Checkpoint States
+	if string.sub(message, 1, 15) == "TurboCheckpoint" then
+		local action, idStr, frameStr = message:match("^TurboCheckpoint(%a+) (%d+) *(%d*)")
+		local id = tonumber(idStr)
+		if action and id then
+
+			if action == "Cancelled" then
+				-- 1. Remove from current UI
+				for i = #currentRunTimeline, 1, -1 do
+					if currentRunTimeline[i].isCheckpoint and currentRunTimeline[i].id == id then
+						table.remove(currentRunTimeline, i)
+						checkpointsData[id] = nil
+						break
+					end
+				end
+				-- 2. Purge from ALL saved timeline clones to prevent ghosts on restart
+				for _, cpData in pairs(checkpointsData) do
+					if cpData.timelineState then
+						for i = #cpData.timelineState, 1, -1 do
+							if cpData.timelineState[i].isCheckpoint and cpData.timelineState[i].id == id then
+								table.remove(cpData.timelineState, i)
+							end
+						end
+					end
+				end
+				if dm then dm.currentTimeline = currentRunTimeline end
+				return
+			end
+
+			-- Handle standard states
+			for i = 1, #currentRunTimeline do
+				if currentRunTimeline[i].isCheckpoint and currentRunTimeline[i].id == id then
+					if action == "Pending" then
+						currentRunTimeline[i].humanName = "CHECKPOINT " .. id .. " (PENDING)"
+						currentRunTimeline[i].isPending = true
+
+					elseif action == "Updated" then
+						currentRunTimeline[i].humanName = "CHECKPOINT " .. id
+						currentRunTimeline[i].isPending = false
+						local realFrame = tonumber(frameStr)
+						if realFrame then
+							local newVFrame = mMax(0, realFrame - runOffsetFrame)
+							currentRunTimeline[i].timeStr = FormatTime(newVFrame)
+							if checkpointsData[id] then
+								checkpointsData[id].virtualFrame = newVFrame
+								local range = spGetTeamStatsHistory(trackedTeamID)
+								local history = spGetTeamStatsHistory(trackedTeamID, range)
+								local stats = (history and #history > 0) and history[#history] or {}
+								checkpointsData[id].metal = stats.metalProduced or 0
+								checkpointsData[id].energy = stats.energyProduced or 0
+							end
+						end
+						-- Refresh the clone so it doesn't say "Pending" if we rewind to it later
+						if checkpointsData[id] then
+							checkpointsData[id].timelineState = CloneTimeline(currentRunTimeline)
+						end
+
+					elseif action == "Saved" then
+						currentRunTimeline[i].humanName = "CHECKPOINT " .. id
+						currentRunTimeline[i].isPending = false
+						if checkpointsData[id] then
+							checkpointsData[id].timelineState = CloneTimeline(currentRunTimeline)
+						end
+
+					elseif action == "Timeout" then
+						if currentRunTimeline[i].isPending then
+							currentRunTimeline[i].humanName = "CHECKPOINT " .. id .. " (FALLBACK)"
+							currentRunTimeline[i].isPending = false
+							if checkpointsData[id] then
+								checkpointsData[id].timelineState = CloneTimeline(currentRunTimeline)
+							end
+						end
+					end
+				end
+			end
+			if dm then dm.currentTimeline = currentRunTimeline end
 		end
 	end
 end
