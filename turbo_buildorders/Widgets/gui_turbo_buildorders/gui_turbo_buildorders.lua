@@ -20,6 +20,8 @@ local spGetTeamStatsHistory = Spring.GetTeamStatsHistory
 local spSendLuaRulesMsg  = Spring.SendLuaRulesMsg
 local spSetClipboard     = Spring.SetClipboard
 local spEcho             = Spring.Echo
+local spGetTimer         = Spring.GetTimer
+local spDiffTimers       = Spring.DiffTimers
 local mFloor             = math.floor
 local mMax               = math.max
 
@@ -35,6 +37,10 @@ local checkpointsData = {}
 local activeCheckpointId = 0
 local currentRunTimeline = {}
 local savedRunsHistory = {}
+
+-- Visual states
+local pendingScrollToRightFrame
+local flashDuration = 0.1
 
 -- Variables to track baseline engine stats for accurate run calculations
 local engineMetalAtRestart = 0
@@ -117,13 +123,11 @@ modelData = {
 		local cpId = nextCheckpointId
 		local reusingId = false
 
-		-- Look for an existing pending checkpoint to overwrite
 		for i = #currentRunTimeline, 1, -1 do
 			local item = currentRunTimeline[i]
 			if item.isCheckpoint and item.isPending then
 				cpId = item.id
 				reusingId = true
-				-- Remove the old visual entry so we can bump it to the bottom
 				table.remove(currentRunTimeline, i)
 				break
 			end
@@ -155,8 +159,8 @@ modelData = {
 		checkpointsData[cpId] = {
 			virtualFrame = vFrame,
 			timelineState = CloneTimeline(currentRunTimeline),
-			metal = vMetal,     -- NEW: Save clean data
-			energy = vEnergy    -- NEW: Save clean data
+			metal = vMetal,
+			energy = vEnergy
 		}
 
 		dm.currentTimeline = currentRunTimeline
@@ -186,30 +190,53 @@ modelData = {
 
 		local cp = checkpointsData[activeCheckpointId] or { metal = 0, energy = 0 }
 
-		-- Calculate resources produced ONLY during the current run attempt
 		local runProducedMetal = (stats.metalProduced or 0) - engineMetalAtRestart
 		local runProducedEnergy = (stats.energyProduced or 0) - engineEnergyAtRestart
 
-		-- Total virtual resources = (What we had at checkpoint) + (What we produced during this attempt)
 		local totalVirtualMetal = cp.metal + mMax(0, runProducedMetal)
 		local totalVirtualEnergy = cp.energy + mMax(0, runProducedEnergy)
 
-		table.insert(savedRunsHistory, 1, {
+		for i = 1, #currentRunTimeline do
+			local item = currentRunTimeline[i]
+			if not item.isCheckpoint then
+				item.hidden = (modelData.ignoredUnits[item.humanName] == true)
+			end
+		end
+		dm.currentTimeline = currentRunTimeline
+
+		-- Build new array to prevent RmlUi index shift bugs
+		local newHistory = {}
+
+		-- 1. Copy old runs exactly as they are
+		for i = 1, #savedRunsHistory do
+			local oldRun = savedRunsHistory[i]
+			oldRun.isFlashing = false
+			newHistory[i] = oldRun
+		end
+
+		-- 2. Append the new run to the end (Right side)
+		newHistory[#savedRunsHistory + 1] = {
 			id = #savedRunsHistory + 1,
+			isFlashing = true,            -- Flag for UI CSS
+			flashEndTime = spGetTimer(),
 			metal = mFloor(1000 + totalVirtualMetal),
 			energy = mFloor(1000 + totalVirtualEnergy),
 			minWind = dm.minWind,
 			maxWind = dm.maxWind,
 			timeline = CloneTimeline(currentRunTimeline)
-		})
+		}
 
-		-- Generate the unit counts array BEFORE binding changes back to the RmlUi data model
+		savedRunsHistory = newHistory
+
 		modelData.refreshUnitCounts()
 
 		dm.savedRuns = savedRunsHistory
 		dm.hasSavedRun = true
 		dm.showRunsPanel = true
 		if docRuns then docRuns:Show() end
+
+		-- Schedule auto-scroll
+		pendingScrollToRightFrame = spGetGameFrame() + 2
 	end,
 
 	copyRun = function(ev, index)
@@ -234,9 +261,15 @@ modelData = {
 
 	removeRun = function(ev, index)
 		if not savedRunsHistory[index + 1] then return end
-		table.remove(savedRunsHistory, index + 1)
 
-		-- Generate the unit counts array BEFORE binding changes back to the RmlUi data model
+		local newHistory = {}
+		for i = 1, #savedRunsHistory do
+			if i ~= (index + 1) then
+				table.insert(newHistory, savedRunsHistory[i])
+			end
+		end
+
+		savedRunsHistory = newHistory
 		modelData.refreshUnitCounts()
 
 		dm.savedRuns = savedRunsHistory
@@ -314,8 +347,6 @@ modelData = {
 			modelData.ignoreUnit(ev, unitName, isCheckpoint)
 		elseif ev.parameters.button == 0 then
 			local newUnit = (dm.highlightedUnit == unitName) and "" or unitName
-
-			-- Pass the new unit string to pre-calculate the counts before the DOM update
 			modelData.refreshUnitCounts(newUnit)
 			dm.highlightedUnit = newUnit
 		end
@@ -330,7 +361,6 @@ modelData = {
 		dm.ignoredUnits = modelData.ignoredUnits
 
 		if dm.highlightedUnit == unitName then
-			-- Clear the counts before turning off the highlight
 			modelData.refreshUnitCounts("")
 			dm.highlightedUnit = ""
 		end
@@ -399,7 +429,6 @@ function widget:GameFrame(f)
 		local history = spGetTeamStatsHistory(trackedTeamID, range)
 		local stats = (history and #history > 0) and history[#history] or {}
 
-		-- Set the engine baseline for the first "run" (match start)
 		engineMetalAtRestart = stats.metalProduced or 0
 		engineEnergyAtRestart = stats.energyProduced or 0
 		activeCheckpointBaseMetal = engineMetalAtRestart
@@ -435,13 +464,14 @@ function widget:AddConsoleLine(msg, priority)
 			ignoreUnitFinishedFrames = spGetGameFrame() + 15
 			currentRunTimeline = cp.timelineState and CloneTimeline(cp.timelineState) or {}
 
-			-- Update the engine stat baselines exactly when a new run begins via restart
 			local range = spGetTeamStatsHistory(trackedTeamID)
 			local history = spGetTeamStatsHistory(trackedTeamID, range)
 			local stats = (history and #history > 0) and history[#history] or {}
 
 			engineMetalAtRestart = stats.metalProduced or 0
 			engineEnergyAtRestart = stats.energyProduced or 0
+			activeCheckpointBaseMetal = cp.metal
+			activeCheckpointBaseEnergy = cp.energy
 
 			if dm then
 				dm.currentTimeline = currentRunTimeline
@@ -453,6 +483,21 @@ end
 
 function widget:Update()
 	if not dm then return end
+
+	-- Lua-driven CSS class wipe for flashing effect (0.4s duration)
+	local needsFlashUpdate = false
+	for i = 1, #savedRunsHistory do
+		if savedRunsHistory[i].isFlashing then
+			if spDiffTimers(spGetTimer(), savedRunsHistory[i].flashEndTime) > flashDuration then
+				savedRunsHistory[i].isFlashing = false
+				needsFlashUpdate = true
+			end
+		end
+	end
+	if needsFlashUpdate then
+		dm.savedRuns = savedRunsHistory
+	end
+
 	if isReplay or isSpec then
 		local newTeam = Spring.GetSelectedTeamID()
 		if newTeam and newTeam ~= trackedTeamID then
@@ -460,7 +505,6 @@ function widget:Update()
 			currentRunTimeline = {}
 			dm.currentTimeline = currentRunTimeline
 		end
-		-- Also check if we should update trackedTeamID because of spec state change
 		local _, _, nowSpec = Spring.GetSpectatingState()
 		if nowSpec ~= isSpec then
 			isSpec = nowSpec
@@ -472,9 +516,20 @@ function widget:Update()
 			end
 		end
 	end
+
 	local newTimeStr = FormatTime(GetVirtualFrame())
 	if dm.clockTime ~= newTimeStr then
 		dm.clockTime = newTimeStr
+	end
+
+
+	if pendingScrollToRightFrame and pendingScrollToRightFrame <= spGetGameFrame() and docRuns then
+		local listEl = docRuns:GetElementById("runs-list-container")
+		Spring.Echo("Update scroll")
+		if listEl then
+			listEl.scroll_left = listEl.scroll_width
+		end
+		pendingScrollToRightFrame = nil
 	end
 end
 
@@ -504,7 +559,6 @@ function widget:RecvLuaMsg(message, playerID)
 				ignoreUnitFinishedFrames = spGetGameFrame() + 15
 				currentRunTimeline = cp.timelineState and CloneTimeline(cp.timelineState) or {}
 
-				-- Update engine baselines exactly when the restart occurs
 				local range = spGetTeamStatsHistory(trackedTeamID)
 				local history = spGetTeamStatsHistory(trackedTeamID, range)
 				local stats = (history and #history > 0) and history[#history] or {}
@@ -523,14 +577,12 @@ function widget:RecvLuaMsg(message, playerID)
 		end
 	end
 
-	-- Process Smart Checkpoint States
 	if string.sub(message, 1, 15) == "TurboCheckpoint" then
 		local action, idStr, frameStr = message:match("^TurboCheckpoint(%a+) (%d+) *(%d*)")
 		local id = tonumber(idStr)
 		if action and id then
 
 			if action == "Cancelled" then
-				-- 1. Remove from current UI
 				for i = #currentRunTimeline, 1, -1 do
 					if currentRunTimeline[i].isCheckpoint and currentRunTimeline[i].id == id then
 						table.remove(currentRunTimeline, i)
@@ -538,7 +590,6 @@ function widget:RecvLuaMsg(message, playerID)
 						break
 					end
 				end
-				-- 2. Purge from ALL saved timeline clones to prevent ghosts on restart
 				for _, cpData in pairs(checkpointsData) do
 					if cpData.timelineState then
 						for i = #cpData.timelineState, 1, -1 do
@@ -552,7 +603,6 @@ function widget:RecvLuaMsg(message, playerID)
 				return
 			end
 
-			-- Handle standard states
 			for i = 1, #currentRunTimeline do
 				if currentRunTimeline[i].isCheckpoint and currentRunTimeline[i].id == id then
 					if action == "Pending" then
@@ -578,7 +628,6 @@ function widget:RecvLuaMsg(message, playerID)
 								checkpointsData[id].energy = activeCheckpointBaseEnergy + mMax(0, currentEngineEnergy - engineEnergyAtRestart)
 							end
 						end
-						-- Refresh the clone so it doesn't say "Pending" if we rewind to it later
 						if checkpointsData[id] then
 							checkpointsData[id].timelineState = CloneTimeline(currentRunTimeline)
 						end

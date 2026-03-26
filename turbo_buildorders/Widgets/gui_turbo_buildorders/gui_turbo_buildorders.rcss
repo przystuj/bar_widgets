@@ -46,7 +46,8 @@ body#quick_restart-runs {
     flex-grow: 1;
     display: flex;
     flex-direction: column;
-    box-sizing: border-box; /* Ensures padding doesn't cause overflow */
+    box-sizing: border-box;
+    /* Ensures padding doesn't cause overflow */
     min-height: 0;
 }
 
@@ -396,7 +397,8 @@ input.range slidertrack {
     background-color: rgba(5, 5, 5, 150);
     display: block;
     padding-right: 4dp; /* Creates a slight buffer so text doesn't touch the scrollbar */
-    box-sizing: border-box; /* Prevents the scrollbar from pushing the container width outwards */
+    box-sizing: border-box;
+    /* Prevents the scrollbar from pushing the container width outwards */
 }
 
 .run-unit-count {
@@ -478,4 +480,10 @@ scrollbarhorizontal sliderarrowdec,
 scrollbarhorizontal sliderarrowinc {
     width: 0dp;
     height: 0dp;
+}
+
+/* Lua-driven flash effect class */
+.flash-run {
+    background-color: rgba(253, 192, 76, 120);
+    border-color: #fdc04c;
 }
