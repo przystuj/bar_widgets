@@ -34,11 +34,13 @@
                     </div>
                     <div class="timeline-container">
                         <div data-for="item : run.timeline" class="timeline-item"
-                             data-if="!item.hidden"
+                             data-if="!item.hidden && !item.foldedChild"
                              data-class-highlighted="!item.isCheckpoint && item.humanName == highlightedUnit"
-                             data-event-mouseup="toggleHighlight(item.humanName, item.isCheckpoint)">
+                             data-event-mouseup="handleRunItemClick(run.id, item.uid)">
                             <span class="run-time">{{item.timeStr}}</span>
-                            <span class="run-name" data-if="!item.isCheckpoint">{{item.humanName}}</span>
+                            <span class="run-name" data-if="!item.isCheckpoint">
+                                {{item.humanName}}<span data-if="item.folded" style="color: #fdc04c; font-weight: bold; margin-left: 4dp;">x{{item.foldCount}}</span>
+                            </span>
                             <span class="run-name" data-if="item.isCheckpoint" style="font-weight: bold; color: #fdc04c;">{{item.humanName}}</span>
                         </div>
                     </div>

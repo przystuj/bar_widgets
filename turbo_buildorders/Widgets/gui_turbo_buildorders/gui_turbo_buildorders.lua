@@ -73,7 +73,11 @@ local function CloneTimeline(source)
 			id = v.id or -1,
 			timeStr = v.timeStr or "00:00",
 			humanName = v.humanName or "Unknown",
-			hidden = (v.hidden == true)
+			hidden = (v.hidden == true),
+			uid = i, -- Unique ID used to trace clicks for folding
+			folded = (v.folded == true),
+			foldCount = v.foldCount or 1,
+			foldedChild = (v.foldedChild == true)
 		}
 	end
 	return copy
@@ -331,6 +335,7 @@ modelData = {
 			if hUnit and hUnit ~= "" then
 				local run = savedRunsHistory[i]
 				for j = 1, #run.timeline do
+					-- Count actual items regardless of fold state
 					if run.timeline[j].humanName == hUnit and not run.timeline[j].isCheckpoint then
 						count = count + 1
 					end
@@ -341,15 +346,143 @@ modelData = {
 		dm.highlightedUnitCount = counts
 	end,
 
+	handleRunItemClick = function(ev, runId, itemUid)
+		local itemName, isCp
+		for i=1, #savedRunsHistory do
+			if savedRunsHistory[i].id == runId then
+				for j=1, #savedRunsHistory[i].timeline do
+					if savedRunsHistory[i].timeline[j].uid == itemUid then
+						itemName = savedRunsHistory[i].timeline[j].humanName
+						isCp = savedRunsHistory[i].timeline[j].isCheckpoint
+						break
+					end
+				end
+			end
+		end
+
+		if not itemName then return end
+
+		if ev.parameters.button == 0 then
+			-- 0: Left Click = Highlight
+			if not isCp then
+				local newUnit = (dm.highlightedUnit == itemName) and "" or itemName
+				modelData.refreshUnitCounts(newUnit)
+				dm.highlightedUnit = newUnit
+			end
+		elseif ev.parameters.button == 1 then
+			-- 1: Right Click = Ignore
+			modelData.ignoreUnit(ev, itemName, isCp)
+		elseif ev.parameters.button == 2 then
+			-- 2: Middle Click = Fold
+			modelData.toggleFold(runId, itemUid)
+		end
+	end,
+
+	toggleFold = function(runId, itemUid)
+		local run = nil
+		local runIdx = nil
+		for i=1, #savedRunsHistory do
+			if savedRunsHistory[i].id == runId then
+				run = savedRunsHistory[i]
+				runIdx = i
+				break
+			end
+		end
+		if not run then return end
+
+		local targetIdx = nil
+		for i=1, #run.timeline do
+			if run.timeline[i].uid == itemUid then
+				targetIdx = i
+				break
+			end
+		end
+		if not targetIdx then return end
+
+		local targetItem = run.timeline[targetIdx]
+		if targetItem.isCheckpoint then return end
+
+		local hName = targetItem.humanName
+
+		-- Expand upwards to find contiguous block
+		local startIdx = targetIdx
+		while startIdx > 1 and run.timeline[startIdx - 1].humanName == hName and not run.timeline[startIdx - 1].isCheckpoint do
+			startIdx = startIdx - 1
+		end
+
+		-- Expand downwards
+		local endIdx = targetIdx
+		while endIdx < #run.timeline and run.timeline[endIdx + 1].humanName == hName and not run.timeline[endIdx + 1].isCheckpoint do
+			endIdx = endIdx + 1
+		end
+
+		-- If it's a single item, folding does nothing
+		if endIdx == startIdx then return end
+
+		-- Build fresh array for timeline to force clean RmlUi binding update
+		local newTimeline = {}
+		for i=1, #run.timeline do
+			newTimeline[i] = {
+				isCheckpoint = run.timeline[i].isCheckpoint,
+				id = run.timeline[i].id,
+				timeStr = run.timeline[i].timeStr,
+				humanName = run.timeline[i].humanName,
+				hidden = run.timeline[i].hidden,
+				uid = run.timeline[i].uid,
+				folded = run.timeline[i].folded,
+				foldCount = run.timeline[i].foldCount,
+				foldedChild = run.timeline[i].foldedChild
+			}
+		end
+
+		local headItemCopy = newTimeline[startIdx]
+
+		if headItemCopy.folded then
+			-- Unfold
+			headItemCopy.folded = false
+			headItemCopy.foldCount = 1
+			for i = startIdx + 1, endIdx do
+				newTimeline[i].foldedChild = false
+			end
+		else
+			-- Fold
+			headItemCopy.folded = true
+			headItemCopy.foldCount = (endIdx - startIdx + 1)
+			for i = startIdx + 1, endIdx do
+				newTimeline[i].foldedChild = true
+			end
+		end
+
+		-- Rebuild run array
+		local newSavedRuns = {}
+		for i=1, #savedRunsHistory do
+			if i == runIdx then
+				local updatedRun = {}
+				for k,v in pairs(savedRunsHistory[i]) do updatedRun[k] = v end
+				updatedRun.timeline = newTimeline
+				newSavedRuns[i] = updatedRun
+			else
+				newSavedRuns[i] = savedRunsHistory[i]
+			end
+		end
+
+		savedRunsHistory = newSavedRuns
+		dm.savedRuns = savedRunsHistory
+	end,
+
 	toggleHighlight = function(ev, unitName, isCheckpoint)
 		if isCheckpoint or not unitName then return end
-		if ev.parameters.button == 1 then
-			modelData.ignoreUnit(ev, unitName, isCheckpoint)
-		elseif ev.parameters.button == 0 then
+
+		if ev.parameters.button == 0 then
+			-- Left Click: Highlight
 			local newUnit = (dm.highlightedUnit == unitName) and "" or unitName
 			modelData.refreshUnitCounts(newUnit)
 			dm.highlightedUnit = newUnit
+		elseif ev.parameters.button == 1 then
+			-- Right Click: Ignore
+			modelData.ignoreUnit(ev, unitName, isCheckpoint)
 		end
+		-- No Middle Click logic here because current timeline doesn't support folding yet
 	end,
 
 	ignoreUnit = function(ev, unitName, isCheckpoint)
@@ -525,7 +658,6 @@ function widget:Update()
 
 	if pendingScrollToRightFrame and pendingScrollToRightFrame <= spGetGameFrame() and docRuns then
 		local listEl = docRuns:GetElementById("runs-list-container")
-		Spring.Echo("Update scroll")
 		if listEl then
 			listEl.scroll_left = listEl.scroll_width
 		end
