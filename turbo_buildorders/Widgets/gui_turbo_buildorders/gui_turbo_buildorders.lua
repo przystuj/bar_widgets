@@ -39,6 +39,8 @@ local savedRunsHistory = {}
 -- Variables to track baseline engine stats for accurate run calculations
 local engineMetalAtRestart = 0
 local engineEnergyAtRestart = 0
+local activeCheckpointBaseMetal = 0
+local activeCheckpointBaseEnergy = 0
 
 local trackedTeamID = spGetMyTeamID()
 local isReplay = Spring.IsReplay()
@@ -136,6 +138,11 @@ modelData = {
 		local history = spGetTeamStatsHistory(trackedTeamID, range)
 		local stats = (history and #history > 0) and history[#history] or {}
 
+		local currentEngineMetal = stats.metalProduced or 0
+		local currentEngineEnergy = stats.energyProduced or 0
+		local vMetal = activeCheckpointBaseMetal + mMax(0, currentEngineMetal - engineMetalAtRestart)
+		local vEnergy = activeCheckpointBaseEnergy + mMax(0, currentEngineEnergy - engineEnergyAtRestart)
+
 		currentRunTimeline[#currentRunTimeline + 1] = {
 			isCheckpoint = true,
 			id = cpId,
@@ -148,8 +155,8 @@ modelData = {
 		checkpointsData[cpId] = {
 			virtualFrame = vFrame,
 			timelineState = CloneTimeline(currentRunTimeline),
-			metal = stats.metalProduced or 0,
-			energy = stats.energyProduced or 0
+			metal = vMetal,     -- NEW: Save clean data
+			energy = vEnergy    -- NEW: Save clean data
 		}
 
 		dm.currentTimeline = currentRunTimeline
@@ -395,6 +402,8 @@ function widget:GameFrame(f)
 		-- Set the engine baseline for the first "run" (match start)
 		engineMetalAtRestart = stats.metalProduced or 0
 		engineEnergyAtRestart = stats.energyProduced or 0
+		activeCheckpointBaseMetal = engineMetalAtRestart
+		activeCheckpointBaseEnergy = engineEnergyAtRestart
 
 		currentRunTimeline[#currentRunTimeline + 1] = {
 			isCheckpoint = true,
@@ -407,8 +416,8 @@ function widget:GameFrame(f)
 		checkpointsData[0] = {
 			virtualFrame = 0,
 			timelineState = CloneTimeline(currentRunTimeline),
-			metal = stats.metalProduced or 0,
-			energy = stats.energyProduced or 0
+			metal = activeCheckpointBaseMetal,
+			energy = activeCheckpointBaseEnergy
 		}
 
 		if dm then dm.currentTimeline = currentRunTimeline end
@@ -503,6 +512,9 @@ function widget:RecvLuaMsg(message, playerID)
 				engineMetalAtRestart = stats.metalProduced or 0
 				engineEnergyAtRestart = stats.energyProduced or 0
 
+				activeCheckpointBaseMetal = cp.metal
+				activeCheckpointBaseEnergy = cp.energy
+
 				if dm then
 					dm.currentTimeline = currentRunTimeline
 					dm.clockTime = FormatTime(GetVirtualFrame())
@@ -559,8 +571,11 @@ function widget:RecvLuaMsg(message, playerID)
 								local range = spGetTeamStatsHistory(trackedTeamID)
 								local history = spGetTeamStatsHistory(trackedTeamID, range)
 								local stats = (history and #history > 0) and history[#history] or {}
-								checkpointsData[id].metal = stats.metalProduced or 0
-								checkpointsData[id].energy = stats.energyProduced or 0
+
+								local currentEngineMetal = stats.metalProduced or 0
+								local currentEngineEnergy = stats.energyProduced or 0
+								checkpointsData[id].metal = activeCheckpointBaseMetal + mMax(0, currentEngineMetal - engineMetalAtRestart)
+								checkpointsData[id].energy = activeCheckpointBaseEnergy + mMax(0, currentEngineEnergy - engineEnergyAtRestart)
 							end
 						end
 						-- Refresh the clone so it doesn't say "Pending" if we rewind to it later
