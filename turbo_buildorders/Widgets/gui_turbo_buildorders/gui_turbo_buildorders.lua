@@ -75,15 +75,15 @@ local function CloneTimeline(source)
 			id = v.id or -1,
 			timeStr = v.timeStr or "00:00",
 			humanName = v.humanName or "Unknown",
-			metalStr = v.metalStr,
-			energyStr = v.energyStr,
+			metalStr = v.metalStr or "",
+			energyStr = v.energyStr or "",
 			hidden = (v.hidden == true),
 			uid = i,
 			folded = (v.folded == true),
 			foldCount = v.foldCount or 1,
 			foldedChild = (v.foldedChild == true),
-			metal = v.metal,
-			energy = v.energy
+			metal = v.metal or 0,
+			energy = v.energy or 0
 		}
 	end
 	return copy
@@ -159,11 +159,18 @@ modelData = {
 
 		currentRunTimeline[#currentRunTimeline + 1] = {
 			isCheckpoint = true,
+			isResource = false,
+			isEnd = false,
 			id = cpId,
 			timeStr = FormatTime(vFrame),
 			humanName = "CHECKPOINT " .. cpId .. (reusingId and " (PENDING)" or ""),
+			metalStr = "",
+			energyStr = "",
 			hidden = false,
 			isPending = reusingId,
+			folded = false,
+			foldedChild = false,
+			foldCount = 1,
 			metal = mFloor(vMetal),
 			energy = mFloor(vEnergy)
 		}
@@ -237,13 +244,21 @@ modelData = {
 		-- Append Resources of last timeline entry
 		if lastEntry and lastEntry.metal and lastEntry.energy then
 			clonedTimeline[#clonedTimeline + 1] = {
+				isCheckpoint = false,
 				isResource = true,
+				isEnd = false,
+				id = -1,
 				timeStr = "",
 				humanName = "",
 				metalStr = "M: " .. (lastEntry.metal + 1000),
 				energyStr = "E: " .. (lastEntry.energy + 1000),
 				hidden = false,
-				uid = #clonedTimeline + 1
+				uid = #clonedTimeline + 1,
+				folded = false,
+				foldedChild = false,
+				foldCount = 1,
+				metal = 0,
+				energy = 0
 			}
 		end
 
@@ -253,21 +268,37 @@ modelData = {
 			isCheckpoint = false,
 			isResource = false,
 			isEnd = true,
+			id = -1,
 			timeStr = FormatTime(currentVFrame),
 			humanName = "End of Run",
+			metalStr = "",
+			energyStr = "",
 			hidden = false,
-			uid = #clonedTimeline + 1
+			uid = #clonedTimeline + 1,
+			folded = false,
+			foldedChild = false,
+			foldCount = 1,
+			metal = 0,
+			energy = 0
 		}
 
 		-- Append Final Resources
 		clonedTimeline[#clonedTimeline + 1] = {
+			isCheckpoint = false,
 			isResource = true,
+			isEnd = false,
+			id = -1,
 			timeStr = "",
 			humanName = "",
 			metalStr = "M: " .. (totalVirtualMetal + 1000),
 			energyStr = "E: " .. (totalVirtualEnergy + 1000),
 			hidden = false,
-			uid = #clonedTimeline + 1
+			uid = #clonedTimeline + 1,
+			folded = false,
+			foldedChild = false,
+			foldCount = 1,
+			metal = 0,
+			energy = 0
 		}
 
 		newHistory[#savedRunsHistory + 1] = {
@@ -473,8 +504,8 @@ modelData = {
 				id = run.timeline[i].id,
 				timeStr = run.timeline[i].timeStr,
 				humanName = run.timeline[i].humanName,
-				metalStr = run.timeline[i].metalStr,
-				energyStr = run.timeline[i].energyStr,
+				metalStr = run.timeline[i].metalStr or "",
+				energyStr = run.timeline[i].energyStr or "",
 				hidden = run.timeline[i].hidden,
 				uid = run.timeline[i].uid,
 				folded = run.timeline[i].folded,
@@ -601,10 +632,17 @@ function widget:UnitFinished(unitID, unitDefID, unitTeam)
 
 	currentRunTimeline[#currentRunTimeline + 1] = {
 		isCheckpoint = false,
+		isResource = false,
+		isEnd = false,
 		id = -1,
 		timeStr = FormatTime(GetVirtualFrame()),
 		humanName = hName,
+		metalStr = "",
+		energyStr = "",
 		hidden = modelData.ignoredUnits[hName] or false,
+		folded = false,
+		foldedChild = false,
+		foldCount = 1,
 		metal = mFloor(vMetal),
 		energy = mFloor(vEnergy)
 	}
@@ -625,10 +663,17 @@ function widget:GameFrame(f)
 
 		currentRunTimeline[#currentRunTimeline + 1] = {
 			isCheckpoint = true,
+			isResource = false,
+			isEnd = false,
 			id = 0,
 			timeStr = "00:00",
 			humanName = "CHECKPOINT 0",
+			metalStr = "",
+			energyStr = "",
 			hidden = false,
+			folded = false,
+			foldedChild = false,
+			foldCount = 1,
 			metal = mFloor(activeCheckpointBaseMetal),
 			energy = mFloor(activeCheckpointBaseEnergy)
 		}
