@@ -48,6 +48,10 @@ local engineEnergyAtRestart = 0
 local activeCheckpointBaseMetal = 0
 local activeCheckpointBaseEnergy = 0
 
+-- Tracker for the ACTUAL wind applied to the engine
+local activeMinWind = Game.windMin
+local activeMaxWind = Game.windMax
+
 local trackedTeamID = spGetMyTeamID()
 local isReplay = Spring.IsReplay()
 local _, _, isSpec = Spring.GetSpectatingState()
@@ -93,8 +97,8 @@ local modelData
 modelData = {
 	isReplay = isReplay,
 	isSpec = isSpec,
-	minWind = 10,
-	maxWind = 10,
+	minWind = Game.windMin,
+	maxWind = Game.windMax,
 	avgWindText = mapAvgWindStr,
 	clockTime = "00:00",
 	currentTimeline = {},
@@ -222,9 +226,33 @@ modelData = {
 			newHistory[i] = oldRun
 		end
 
-		local clonedTimeline = CloneTimeline(currentRunTimeline)
+		-- Build the history timeline, FILTERING OUT checkpoints
+		local clonedTimeline = {}
+		local uidCounter = 1
+		for i = 1, #currentRunTimeline do
+			local v = currentRunTimeline[i]
+			if not v.isCheckpoint then
+				clonedTimeline[#clonedTimeline + 1] = {
+					isCheckpoint = false,
+					isResource = (v.isResource == true),
+					isEnd = (v.isEnd == true),
+					id = v.id or -1,
+					timeStr = v.timeStr or "00:00",
+					humanName = v.humanName or "Unknown",
+					metalStr = v.metalStr or "",
+					energyStr = v.energyStr or "",
+					hidden = (v.hidden == true),
+					uid = uidCounter,
+					folded = (v.folded == true),
+					foldCount = v.foldCount or 1,
+					foldedChild = (v.foldedChild == true),
+					metal = v.metal or 0,
+					energy = v.energy or 0
+				}
+				uidCounter = uidCounter + 1
+			end
+		end
 
-		-- Find the last visible entry to grab resources
 		local lastEntry = nil
 		for i = #clonedTimeline, 1, -1 do
 			if not clonedTimeline[i].hidden then
@@ -233,7 +261,6 @@ modelData = {
 			end
 		end
 
-		-- Append Resources of last timeline entry
 		if lastEntry and lastEntry.metal and lastEntry.energy then
 			clonedTimeline[#clonedTimeline + 1] = {
 				isCheckpoint = false,
@@ -245,16 +272,16 @@ modelData = {
 				metalStr = "M: " .. (lastEntry.metal + 1000),
 				energyStr = "E: " .. (lastEntry.energy + 1000),
 				hidden = false,
-				uid = #clonedTimeline + 1,
+				uid = uidCounter,
 				folded = false,
 				foldedChild = false,
 				foldCount = 1,
 				metal = 0,
 				energy = 0
 			}
+			uidCounter = uidCounter + 1
 		end
 
-		-- Append End of Run indicator
 		local currentVFrame = GetVirtualFrame()
 		clonedTimeline[#clonedTimeline + 1] = {
 			isCheckpoint = false,
@@ -266,15 +293,15 @@ modelData = {
 			metalStr = "",
 			energyStr = "",
 			hidden = false,
-			uid = #clonedTimeline + 1,
+			uid = uidCounter,
 			folded = false,
 			foldedChild = false,
 			foldCount = 1,
 			metal = 0,
 			energy = 0
 		}
+		uidCounter = uidCounter + 1
 
-		-- Append Final Resources
 		clonedTimeline[#clonedTimeline + 1] = {
 			isCheckpoint = false,
 			isResource = true,
@@ -285,7 +312,7 @@ modelData = {
 			metalStr = "M: " .. (totalVirtualMetal + 1000),
 			energyStr = "E: " .. (totalVirtualEnergy + 1000),
 			hidden = false,
-			uid = #clonedTimeline + 1,
+			uid = uidCounter,
 			folded = false,
 			foldedChild = false,
 			foldCount = 1,
@@ -299,8 +326,8 @@ modelData = {
 			flashEndTime = spGetTimer(),
 			metal = totalVirtualMetal + 1000,
 			energy = totalVirtualEnergy + 1000,
-			minWind = dm.minWind,
-			maxWind = dm.maxWind,
+			minWind = activeMinWind,
+			maxWind = activeMaxWind,
 			timeline = clonedTimeline
 		}
 
@@ -368,12 +395,16 @@ modelData = {
 
 	sendWind = function(ev)
 		local minW, maxW = tonumber(dm.minWind) or 10, tonumber(dm.maxWind) or 10
+		activeMinWind = minW
+		activeMaxWind = maxW
 		spEcho(string.format("Wind set to %.1f-%.1f", minW, maxW))
 		spSendLuaRulesMsg("!wind " .. minW .. " " .. maxW)
 	end,
 
 	sendAvgWind = function(ev)
 		dm.minWind, dm.maxWind = mapAvgWindStr, mapAvgWindStr
+		activeMinWind = mapAvgWindStr
+		activeMaxWind = mapAvgWindStr
 		spEcho(string.format("Wind set to %.1f-%.1f", mapAvgWindStr, mapAvgWindStr))
 		spSendLuaRulesMsg("!wind " .. mapAvgWindStr .. " " .. mapAvgWindStr)
 	end,
@@ -381,6 +412,8 @@ modelData = {
 	sendDefaultWind = function(ev)
 		spSendLuaRulesMsg("!wind off")
 		dm.minWind, dm.maxWind = Game.windMin, Game.windMax
+		activeMinWind = Game.windMin
+		activeMaxWind = Game.windMax
 		spEcho(string.format("Wind set to %.1f-%.1f", Game.windMin, Game.windMax))
 	end,
 
