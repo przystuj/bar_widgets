@@ -29,19 +29,24 @@
                     </div>
                     <div class="run-resources">
                         <span class="run-wind">Wind: <span data-if="run.minWind == run.maxWind">{{run.minWind}}</span><span data-if="run.minWind != run.maxWind">{{run.minWind}}-{{run.maxWind}}</span></span>
-                        <span class="metal" title="Total metal produced">M: {{run.metal}}</span>
-                        <span class="energy" title="Total energy produced">E: {{run.energy}}</span>
                     </div>
                     <div class="timeline-container">
                         <div data-for="item : run.timeline" class="timeline-item"
                              data-if="!item.hidden && !item.foldedChild"
-                             data-class-highlighted="!item.isCheckpoint && item.humanName == highlightedUnit"
+                             data-class-highlighted="!item.isCheckpoint && !item.isResource && !item.isEnd && item.humanName == highlightedUnit"
                              data-event-mouseup="handleRunItemClick(run.id, item.uid)">
                             <span class="run-time">{{item.timeStr}}</span>
-                            <span class="run-name" data-if="!item.isCheckpoint">
+
+                            <span class="run-name" data-if="!item.isCheckpoint && !item.isResource">
                                 {{item.humanName}}<span data-if="item.folded" style="color: #fdc04c; font-weight: bold; margin-left: 4dp;">x{{item.foldCount}}</span>
                             </span>
+
                             <span class="run-name" data-if="item.isCheckpoint" style="font-weight: bold; color: #fdc04c;">{{item.humanName}}</span>
+
+                            <span class="run-name" data-if="item.isResource" style="text-align: right; font-size: 11dp;">
+                                <span class="metal" style="margin-right: 8dp;">{{item.metalStr}}</span>
+                                <span class="energy">{{item.energyStr}}</span>
+                            </span>
                         </div>
                     </div>
                     <div class="run-unit-count" data-if="highlightedUnit != ''">

@@ -70,14 +70,20 @@ local function CloneTimeline(source)
 		local v = source[i]
 		copy[i] = {
 			isCheckpoint = (v.isCheckpoint == true),
+			isResource = (v.isResource == true),
+			isEnd = (v.isEnd == true),
 			id = v.id or -1,
 			timeStr = v.timeStr or "00:00",
 			humanName = v.humanName or "Unknown",
+			metalStr = v.metalStr,
+			energyStr = v.energyStr,
 			hidden = (v.hidden == true),
-			uid = i, -- Unique ID used to trace clicks for folding
+			uid = i,
 			folded = (v.folded == true),
 			foldCount = v.foldCount or 1,
-			foldedChild = (v.foldedChild == true)
+			foldedChild = (v.foldedChild == true),
+			metal = v.metal,
+			energy = v.energy
 		}
 	end
 	return copy
@@ -114,7 +120,7 @@ modelData = {
 			if run and run.timeline then
 				for j = 1, #run.timeline do
 					local item = run.timeline[j]
-					if item and not (item.isCheckpoint == true) then
+					if item and not (item.isCheckpoint == true) and not item.isResource and not item.isEnd then
 						item.hidden = (modelData.ignoredUnits[item.humanName] == true)
 					end
 				end
@@ -157,7 +163,9 @@ modelData = {
 			timeStr = FormatTime(vFrame),
 			humanName = "CHECKPOINT " .. cpId .. (reusingId and " (PENDING)" or ""),
 			hidden = false,
-			isPending = reusingId
+			isPending = reusingId,
+			metal = mFloor(vMetal),
+			energy = mFloor(vEnergy)
 		}
 
 		checkpointsData[cpId] = {
@@ -197,8 +205,8 @@ modelData = {
 		local runProducedMetal = (stats.metalProduced or 0) - engineMetalAtRestart
 		local runProducedEnergy = (stats.energyProduced or 0) - engineEnergyAtRestart
 
-		local totalVirtualMetal = cp.metal + mMax(0, runProducedMetal)
-		local totalVirtualEnergy = cp.energy + mMax(0, runProducedEnergy)
+		local totalVirtualMetal = mFloor(cp.metal + mMax(0, runProducedMetal))
+		local totalVirtualEnergy = mFloor(cp.energy + mMax(0, runProducedEnergy))
 
 		for i = 1, #currentRunTimeline do
 			local item = currentRunTimeline[i]
@@ -208,30 +216,72 @@ modelData = {
 		end
 		dm.currentTimeline = currentRunTimeline
 
-		-- Build new array to prevent RmlUi index shift bugs
 		local newHistory = {}
-
-		-- 1. Copy old runs exactly as they are
 		for i = 1, #savedRunsHistory do
 			local oldRun = savedRunsHistory[i]
 			oldRun.isFlashing = false
 			newHistory[i] = oldRun
 		end
 
-		-- 2. Append the new run to the end (Right side)
+		local clonedTimeline = CloneTimeline(currentRunTimeline)
+
+		-- Find the last visible entry to grab resources
+		local lastEntry = nil
+		for i = #clonedTimeline, 1, -1 do
+			if not clonedTimeline[i].hidden then
+				lastEntry = clonedTimeline[i]
+				break
+			end
+		end
+
+		-- Append Resources of last timeline entry
+		if lastEntry and lastEntry.metal and lastEntry.energy then
+			clonedTimeline[#clonedTimeline + 1] = {
+				isResource = true,
+				timeStr = "",
+				humanName = "",
+				metalStr = "M: " .. (lastEntry.metal + 1000),
+				energyStr = "E: " .. (lastEntry.energy + 1000),
+				hidden = false,
+				uid = #clonedTimeline + 1
+			}
+		end
+
+		-- Append End of Run indicator
+		local currentVFrame = GetVirtualFrame()
+		clonedTimeline[#clonedTimeline + 1] = {
+			isCheckpoint = false,
+			isResource = false,
+			isEnd = true,
+			timeStr = FormatTime(currentVFrame),
+			humanName = "End of Run",
+			hidden = false,
+			uid = #clonedTimeline + 1
+		}
+
+		-- Append Final Resources
+		clonedTimeline[#clonedTimeline + 1] = {
+			isResource = true,
+			timeStr = "",
+			humanName = "",
+			metalStr = "M: " .. (totalVirtualMetal + 1000),
+			energyStr = "E: " .. (totalVirtualEnergy + 1000),
+			hidden = false,
+			uid = #clonedTimeline + 1
+		}
+
 		newHistory[#savedRunsHistory + 1] = {
 			id = #savedRunsHistory + 1,
-			isFlashing = true,            -- Flag for UI CSS
+			isFlashing = true,
 			flashEndTime = spGetTimer(),
-			metal = mFloor(1000 + totalVirtualMetal),
-			energy = mFloor(1000 + totalVirtualEnergy),
+			metal = totalVirtualMetal + 1000,
+			energy = totalVirtualEnergy + 1000,
 			minWind = dm.minWind,
 			maxWind = dm.maxWind,
-			timeline = CloneTimeline(currentRunTimeline)
+			timeline = clonedTimeline
 		}
 
 		savedRunsHistory = newHistory
-
 		modelData.refreshUnitCounts()
 
 		dm.savedRuns = savedRunsHistory
@@ -239,7 +289,6 @@ modelData = {
 		dm.showRunsPanel = true
 		if docRuns then docRuns:Show() end
 
-		-- Schedule auto-scroll
 		pendingScrollToRightFrame = spGetGameFrame() + 2
 	end,
 
@@ -253,13 +302,16 @@ modelData = {
 		local timelineLines = {}
 		for i = 1, #run.timeline do
 			local v = run.timeline[i]
-			if not v.isCheckpoint then
-				timelineLines[#timelineLines + 1] = string.format("%s: %s", v.timeStr, v.humanName)
+			if not v.isCheckpoint and not v.hidden then
+				if v.isResource then
+					timelineLines[#timelineLines + 1] = string.format("      %s   %s", v.metalStr, v.energyStr)
+				else
+					timelineLines[#timelineLines + 1] = string.format("%s: %s", v.timeStr, v.humanName)
+				end
 			end
 		end
 
-		local footer = string.format("\nfinal produced resources:\nmetal: %d energy: %d", run.metal, run.energy)
-		spSetClipboard(header .. table.concat(timelineLines, "\n") .. footer)
+		spSetClipboard(header .. table.concat(timelineLines, "\n"))
 		spEcho("Run copied to clipboard!")
 	end,
 
@@ -335,8 +387,7 @@ modelData = {
 			if hUnit and hUnit ~= "" then
 				local run = savedRunsHistory[i]
 				for j = 1, #run.timeline do
-					-- Count actual items regardless of fold state
-					if run.timeline[j].humanName == hUnit and not run.timeline[j].isCheckpoint then
+					if run.timeline[j].humanName == hUnit and not run.timeline[j].isCheckpoint and not run.timeline[j].isResource and not run.timeline[j].isEnd then
 						count = count + 1
 					end
 				end
@@ -360,20 +411,17 @@ modelData = {
 			end
 		end
 
-		if not itemName then return end
+		if not itemName or itemName == "" or itemName == "End of Run" then return end
 
 		if ev.parameters.button == 0 then
-			-- 0: Left Click = Highlight
 			if not isCp then
 				local newUnit = (dm.highlightedUnit == itemName) and "" or itemName
 				modelData.refreshUnitCounts(newUnit)
 				dm.highlightedUnit = newUnit
 			end
 		elseif ev.parameters.button == 1 then
-			-- 1: Right Click = Ignore
 			modelData.ignoreUnit(ev, itemName, isCp)
 		elseif ev.parameters.button == 2 then
-			-- 2: Middle Click = Fold
 			modelData.toggleFold(runId, itemUid)
 		end
 	end,
@@ -400,52 +448,52 @@ modelData = {
 		if not targetIdx then return end
 
 		local targetItem = run.timeline[targetIdx]
-		if targetItem.isCheckpoint then return end
+		if targetItem.isCheckpoint or targetItem.isResource or targetItem.isEnd then return end
 
 		local hName = targetItem.humanName
 
-		-- Expand upwards to find contiguous block
 		local startIdx = targetIdx
 		while startIdx > 1 and run.timeline[startIdx - 1].humanName == hName and not run.timeline[startIdx - 1].isCheckpoint do
 			startIdx = startIdx - 1
 		end
 
-		-- Expand downwards
 		local endIdx = targetIdx
 		while endIdx < #run.timeline and run.timeline[endIdx + 1].humanName == hName and not run.timeline[endIdx + 1].isCheckpoint do
 			endIdx = endIdx + 1
 		end
 
-		-- If it's a single item, folding does nothing
 		if endIdx == startIdx then return end
 
-		-- Build fresh array for timeline to force clean RmlUi binding update
 		local newTimeline = {}
 		for i=1, #run.timeline do
 			newTimeline[i] = {
 				isCheckpoint = run.timeline[i].isCheckpoint,
+				isResource = run.timeline[i].isResource,
+				isEnd = run.timeline[i].isEnd,
 				id = run.timeline[i].id,
 				timeStr = run.timeline[i].timeStr,
 				humanName = run.timeline[i].humanName,
+				metalStr = run.timeline[i].metalStr,
+				energyStr = run.timeline[i].energyStr,
 				hidden = run.timeline[i].hidden,
 				uid = run.timeline[i].uid,
 				folded = run.timeline[i].folded,
 				foldCount = run.timeline[i].foldCount,
-				foldedChild = run.timeline[i].foldedChild
+				foldedChild = run.timeline[i].foldedChild,
+				metal = run.timeline[i].metal,
+				energy = run.timeline[i].energy
 			}
 		end
 
 		local headItemCopy = newTimeline[startIdx]
 
 		if headItemCopy.folded then
-			-- Unfold
 			headItemCopy.folded = false
 			headItemCopy.foldCount = 1
 			for i = startIdx + 1, endIdx do
 				newTimeline[i].foldedChild = false
 			end
 		else
-			-- Fold
 			headItemCopy.folded = true
 			headItemCopy.foldCount = (endIdx - startIdx + 1)
 			for i = startIdx + 1, endIdx do
@@ -453,7 +501,6 @@ modelData = {
 			end
 		end
 
-		-- Rebuild run array
 		local newSavedRuns = {}
 		for i=1, #savedRunsHistory do
 			if i == runIdx then
@@ -471,22 +518,19 @@ modelData = {
 	end,
 
 	toggleHighlight = function(ev, unitName, isCheckpoint)
-		if isCheckpoint or not unitName then return end
+		if isCheckpoint or not unitName or unitName == "" or unitName == "End of Run" then return end
 
 		if ev.parameters.button == 0 then
-			-- Left Click: Highlight
 			local newUnit = (dm.highlightedUnit == unitName) and "" or unitName
 			modelData.refreshUnitCounts(newUnit)
 			dm.highlightedUnit = newUnit
 		elseif ev.parameters.button == 1 then
-			-- Right Click: Ignore
 			modelData.ignoreUnit(ev, unitName, isCheckpoint)
 		end
-		-- No Middle Click logic here because current timeline doesn't support folding yet
 	end,
 
 	ignoreUnit = function(ev, unitName, isCheckpoint)
-		if isCheckpoint or not unitName or modelData.ignoredUnits[unitName] then return end
+		if isCheckpoint or not unitName or unitName == "" or unitName == "End of Run" or modelData.ignoredUnits[unitName] then return end
 
 		modelData.ignoredUnits[unitName] = true
 		table.insert(modelData.ignoredUnitsList, unitName)
@@ -545,12 +589,24 @@ function widget:UnitFinished(unitID, unitDefID, unitTeam)
 	if not ud then return end
 
 	local hName = ud.translatedHumanName or ud.humanName or ud.name
+
+	local range = spGetTeamStatsHistory(trackedTeamID)
+	local history = spGetTeamStatsHistory(trackedTeamID, range)
+	local stats = (history and #history > 0) and history[#history] or {}
+
+	local currentEngineMetal = stats.metalProduced or 0
+	local currentEngineEnergy = stats.energyProduced or 0
+	local vMetal = activeCheckpointBaseMetal + mMax(0, currentEngineMetal - engineMetalAtRestart)
+	local vEnergy = activeCheckpointBaseEnergy + mMax(0, currentEngineEnergy - engineEnergyAtRestart)
+
 	currentRunTimeline[#currentRunTimeline + 1] = {
 		isCheckpoint = false,
 		id = -1,
 		timeStr = FormatTime(GetVirtualFrame()),
 		humanName = hName,
-		hidden = modelData.ignoredUnits[hName] or false
+		hidden = modelData.ignoredUnits[hName] or false,
+		metal = mFloor(vMetal),
+		energy = mFloor(vEnergy)
 	}
 
 	if dm then dm.currentTimeline = currentRunTimeline end
@@ -572,7 +628,9 @@ function widget:GameFrame(f)
 			id = 0,
 			timeStr = "00:00",
 			humanName = "CHECKPOINT 0",
-			hidden = false
+			hidden = false,
+			metal = mFloor(activeCheckpointBaseMetal),
+			energy = mFloor(activeCheckpointBaseEnergy)
 		}
 
 		checkpointsData[0] = {
@@ -617,7 +675,6 @@ end
 function widget:Update()
 	if not dm then return end
 
-	-- Lua-driven CSS class wipe for flashing effect (0.4s duration)
 	local needsFlashUpdate = false
 	for i = 1, #savedRunsHistory do
 		if savedRunsHistory[i].isFlashing then
@@ -756,8 +813,12 @@ function widget:RecvLuaMsg(message, playerID)
 
 								local currentEngineMetal = stats.metalProduced or 0
 								local currentEngineEnergy = stats.energyProduced or 0
-								checkpointsData[id].metal = activeCheckpointBaseMetal + mMax(0, currentEngineMetal - engineMetalAtRestart)
-								checkpointsData[id].energy = activeCheckpointBaseEnergy + mMax(0, currentEngineEnergy - engineEnergyAtRestart)
+								local vMetal = activeCheckpointBaseMetal + mMax(0, currentEngineMetal - engineMetalAtRestart)
+								local vEnergy = activeCheckpointBaseEnergy + mMax(0, currentEngineEnergy - engineEnergyAtRestart)
+								checkpointsData[id].metal = vMetal
+								checkpointsData[id].energy = vEnergy
+								currentRunTimeline[i].metal = mFloor(vMetal)
+								currentRunTimeline[i].energy = mFloor(vEnergy)
 							end
 						end
 						if checkpointsData[id] then
