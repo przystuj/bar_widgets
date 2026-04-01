@@ -104,6 +104,7 @@ modelData = {
 	avgWindText = mapAvgWindStr,
 	clockTime = "00:00",
 	currentTimeline = {},
+	isCurrentTimelineEmpty = true,
 	savedRuns = savedRunsHistory,
 	showRunsPanel = false,
 	hasSavedRun = false,
@@ -733,7 +734,6 @@ function widget:Initialize()
 	docRuns = widget.rmlContext:LoadDocument(RML_RUNS_PATH, widget)
 	if docRuns then
 		docRuns:ReloadStyleSheet()
-		if modelData.showRunsPanel then docRuns:Show() else docRuns:Hide() end
 	end
 end
 
@@ -843,6 +843,8 @@ end
 
 function widget:Update()
 	if not dm then return end
+
+	dm.isCurrentTimelineEmpty = #currentRunTimeline == 0
 
 	local needsFlashUpdate = false
 	for i = 1, #savedRunsHistory do

@@ -50,9 +50,8 @@
                 Tracking selected team
             </div>
 
-            <div class="header">Current run</div>
-
-            <div class="timeline-container" style="max-height: 300dp; margin-bottom: 6dp;">
+            <div class="header" data-if="!isCurrentTimelineEmpty">Current run</div>
+            <div class="timeline-container" style="max-height: 300dp; margin-bottom: 6dp;" data-if="!isCurrentTimelineEmpty">
                 <div data-for="item : currentTimeline" class="timeline-item" style="align-items: center;"
                      data-if="!item.hidden"
                      data-class-highlighted="!item.isCheckpoint && item.humanName == highlightedUnit"
