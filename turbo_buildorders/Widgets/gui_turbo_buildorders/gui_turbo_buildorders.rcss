@@ -487,3 +487,38 @@ scrollbarhorizontal sliderarrowinc {
     background-color: rgba(253, 192, 76, 120);
     border-color: #fdc04c;
 }
+
+/* --- Wind Buttons Row --- */
+.wind-buttons-row {
+    display: flex;
+    flex-direction: row;
+    gap: 4dp;
+    margin-bottom: 6dp;
+}
+
+.wind-buttons-row button {
+    margin-bottom: 0dp;
+    padding-left: 2dp;
+    padding-right: 2dp;
+}
+
+/* --- CSV Export Button --- */
+.btn-csv {
+    position: absolute;
+    top: 5dp;
+    right: 35dp;
+    height: 20dp;
+    line-height: 18dp;
+    text-align: center;
+    background-color: rgba(40, 100, 150, 200);
+    color: white;
+    font-size: 11dp;
+    padding: 0dp 6dp;
+    cursor: pointer;
+    border: 1dp #444;
+    border-radius: 2dp;
+}
+
+.btn-csv:hover {
+    background-color: rgba(60, 130, 190, 255);
+}

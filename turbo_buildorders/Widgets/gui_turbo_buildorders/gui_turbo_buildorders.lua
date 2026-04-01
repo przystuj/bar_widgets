@@ -36,7 +36,7 @@ local nextCheckpointId = 1
 local checkpointsData = {}
 local activeCheckpointId = 0
 local currentRunTimeline = {}
-local savedRunsHistory = {}
+local savedRunsHistory = {} --- @type RunHistory[]
 
 -- Visual states
 local pendingScrollToRightFrame
@@ -99,6 +99,8 @@ modelData = {
 	isSpec = isSpec,
 	minWind = Game.windMin,
 	maxWind = Game.windMax,
+	minWindText = Game.windMin,
+	maxWindText = Game.windMax,
 	avgWindText = mapAvgWindStr,
 	clockTime = "00:00",
 	currentTimeline = {},
@@ -320,6 +322,7 @@ modelData = {
 			energy = 0
 		}
 
+		--- @class RunHistory
 		newHistory[#savedRunsHistory + 1] = {
 			id = #savedRunsHistory + 1,
 			isFlashing = true,
@@ -401,12 +404,108 @@ modelData = {
 		spSendLuaRulesMsg("!wind " .. minW .. " " .. maxW)
 	end,
 
+	sendMinWind = function(ev)
+		local w = Game.windMin
+		activeMinWind = w
+		activeMaxWind = w
+		spEcho(string.format("Wind set to %.1f-%.1f", w, w))
+		spSendLuaRulesMsg("!wind " .. w .. " " .. w)
+	end,
+
 	sendAvgWind = function(ev)
 		dm.minWind, dm.maxWind = mapAvgWindStr, mapAvgWindStr
 		activeMinWind = mapAvgWindStr
 		activeMaxWind = mapAvgWindStr
 		spEcho(string.format("Wind set to %.1f-%.1f", mapAvgWindStr, mapAvgWindStr))
 		spSendLuaRulesMsg("!wind " .. mapAvgWindStr .. " " .. mapAvgWindStr)
+	end,
+
+	sendMaxWind = function(ev)
+		local w = Game.windMax
+		activeMinWind = w
+		activeMaxWind = w
+		spEcho(string.format("Wind set to %.1f-%.1f", w, w))
+		spSendLuaRulesMsg("!wind " .. w .. " " .. w)
+	end,
+
+	copyAllRunsCSV = function(ev)
+		if #savedRunsHistory == 0 then
+			spEcho("No runs to copy!")
+			return
+		end
+
+		-- 1. Scan for every unique second where ANY unit was built
+		local timesMap = {}
+		for i=1, #savedRunsHistory do
+			for j=1, #savedRunsHistory[i].timeline do
+				local item = savedRunsHistory[i].timeline[j]
+				if not item.isCheckpoint and not item.isResource and not item.isEnd and not item.hidden then
+					timesMap[item.timeStr] = true
+				end
+			end
+		end
+
+		local timesList = {}
+		for t, _ in pairs(timesMap) do table.insert(timesList, t) end
+		table.sort(timesList)
+
+		-- 2. Build the top header row
+		local headerCols = {"Time"}
+		for i=1, #savedRunsHistory do
+			local wind
+			if savedRunsHistory[i].minWind ~= savedRunsHistory[i].maxWind then
+				wind = string.format("Wind %.1f - %.1f", savedRunsHistory[i].minWind, savedRunsHistory[i].maxWind)
+			else
+				wind = string.format("Wind %.1f", savedRunsHistory[i].minWind)
+			end
+			table.insert(headerCols, wind)
+		end
+		local csvLines = { table.concat(headerCols, ",") }
+
+		-- 3. Build each row by time
+		for _, tStr in ipairs(timesList) do
+			local rowCols = { tStr }
+			for i=1, #savedRunsHistory do
+				local unitsAtTime = {}
+				for j=1, #savedRunsHistory[i].timeline do
+					local item = savedRunsHistory[i].timeline[j]
+					if item.timeStr == tStr and not item.isCheckpoint and not item.isResource and not item.isEnd and not item.hidden then
+						table.insert(unitsAtTime, item.humanName)
+					end
+				end
+				-- Join multiples with a pipe, wrap cell in quotes to prevent standard CSV breakage
+				table.insert(rowCols, '"' .. table.concat(unitsAtTime, " | ") .. '"')
+			end
+			table.insert(csvLines, table.concat(rowCols, ","))
+		end
+
+		local metalCols = {"Metal"}
+		local energyCols = {"Energy"}
+
+		for i=1, #savedRunsHistory do
+			local run = savedRunsHistory[i]
+			local lastUnitMetal = 1000
+			local lastUnitEnergy = 1000
+
+			-- Scan backwards to find the last valid unit entry
+			for j = #run.timeline, 1, -1 do
+				local item = run.timeline[j]
+				if not item.isCheckpoint and not item.isResource and not item.isEnd and not item.hidden then
+					lastUnitMetal = (item.metal or 0) + 1000
+					lastUnitEnergy = (item.energy or 0) + 1000
+					break
+				end
+			end
+
+			table.insert(metalCols, tostring(lastUnitMetal))
+			table.insert(energyCols, tostring(lastUnitEnergy))
+		end
+
+		table.insert(csvLines, table.concat(metalCols, ","))
+		table.insert(csvLines, table.concat(energyCols, ","))
+
+		spSetClipboard(table.concat(csvLines, "\n"))
+		spEcho("CSV copied to clipboard!")
 	end,
 
 	sendDefaultWind = function(ev)

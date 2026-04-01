@@ -13,6 +13,7 @@
         <handle move_target="#document" id="header-handle">
             <div class="header" style="border-bottom: 1dp #444;">
                 History
+                <div class="btn-csv" data-event-click="copyAllRunsCSV()">CSV</div>
                 <div class="btn-close-panel" data-event-click="toggleRunsPanel()">X</div>
             </div>
         </handle>
