@@ -28,21 +28,29 @@ local maxWind = Game.windMax
 local spGetUnitIsBeingBuilt = Spring.GetUnitIsBeingBuilt
 local spGetFactoryCommands = Spring.GetFactoryCommands
 
-
-
 local waitFramesForValidSnapshot = 15000
 
--- Checks the whole board to see if ANY unit is currently under construction
-local function IsAnythingBeingBuilt()
-	local allUnits = Spring.GetAllUnits()
-	for _, uID in ipairs(allUnits) do
-		local beingBuilt, progress = spGetUnitIsBeingBuilt(uID)
-		if beingBuilt and progress < 1.0 then
-			return true
-		end
-	end
-	return false
+local unitsUnderConstruction = 0
+
+function gadget:UnitCreated(unitID, unitDefID, unitTeam, builderID)
+	unitsUnderConstruction = unitsUnderConstruction + 1
 end
+
+function gadget:UnitFinished(unitID, unitDefID, unitTeam)
+	unitsUnderConstruction = math.max(0, unitsUnderConstruction - 1)
+end
+
+function gadget:UnitDestroyed(unitID, unitDefID, unitTeam)
+	local _, progress = spGetUnitIsBeingBuilt(unitID)
+	if progress and progress < 1.0 then
+		unitsUnderConstruction = math.max(0, unitsUnderConstruction - 1)
+	end
+end
+
+local function IsAnythingBeingBuilt()
+	return unitsUnderConstruction > 0
+end
+-------------------------------------------------------------------
 
 -- Builds the snapshot table
 local function CreateSnapshot()
@@ -277,8 +285,7 @@ local function ProcessRestore(frame)
 end
 
 function gadget:GameFrame(frame)
-	-- Keep fallback updated
-	if frame % 1 == 0 then
+	if frame % 30 == 0 then
 		if not IsAnythingBeingBuilt() then
 			tempCheckpoint = CreateSnapshot()
 		end
