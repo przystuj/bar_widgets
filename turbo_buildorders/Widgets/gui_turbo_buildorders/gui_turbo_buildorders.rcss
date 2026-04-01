@@ -6,14 +6,14 @@ body {
 /* Base starting position for the Main panel */
 body#quick_restart-main {
     top: 105dp;
-    left: 20dp;
+    right: 20dp;
     width: 300dp;
 }
 
 /* Base starting position for the Runs History panel */
 body#quick_restart-runs {
     top: 105dp;
-    left: 330dp;
+    right: 330dp;
     width: 430dp;
     height: 445dp;
     min-width: 220dp;

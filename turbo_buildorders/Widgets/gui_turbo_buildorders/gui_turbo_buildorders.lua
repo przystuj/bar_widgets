@@ -190,14 +190,6 @@ modelData = {
 		local cp = checkpointsData[id]
 		if not cp then return end
 
-		activeCheckpointId = id
-		runOffsetFrame = spGetGameFrame() - cp.virtualFrame
-		ignoreUnitFinishedFrames = spGetGameFrame() + 15
-
-		currentRunTimeline = cp.timelineState and CloneTimeline(cp.timelineState) or {}
-
-		dm.currentTimeline = currentRunTimeline
-		dm.clockTime = FormatTime(GetVirtualFrame())
 		spSendLuaRulesMsg("!restart " .. id)
 	end,
 
@@ -768,9 +760,19 @@ function widget:Update()
 end
 
 function widget:Shutdown()
-	if docMain then docMain:Close(); docMain = nil end
-	if docRuns then docRuns:Close(); docRuns = nil end
-	if widget.rmlContext then widget.rmlContext:RemoveDataModel(MODEL_NAME) end
+	if docMain then
+		docMain:Hide()
+		docMain:Close()
+		docMain = nil
+	end
+	if docRuns then
+		docRuns:Hide()
+		docRuns:Close()
+		docRuns = nil
+	end
+	if widget.rmlContext then
+		widget.rmlContext:RemoveDataModel(MODEL_NAME)
+	end
 	widget.rmlContext = nil
 end
 
@@ -806,6 +808,9 @@ function widget:RecvLuaMsg(message, playerID)
 				if dm then
 					dm.currentTimeline = currentRunTimeline
 					dm.clockTime = FormatTime(GetVirtualFrame())
+
+					dm.showRunsPanel = false
+					if docRuns then docRuns:Hide() end
 				end
 			end
 		end
