@@ -135,6 +135,22 @@ local function RestoreCheckpoint(id)
 
 	-- Step 1: Wipe everything
 	local allUnits = Spring.GetAllUnits()
+
+	-- create dummy commanders to prevent "Game End" gadget from triggering defeat
+	local dummyCommanders = {}
+	if Spring.GetModOptions().deathmode ~= 'neverend' then
+		local teams = Spring.GetTeamList()
+		for _, tID in ipairs(teams) do
+			if tID ~= Spring.GetGaiaTeamID() then
+				local cx, cy, cz = 0, 0, 0
+				local uID = Spring.CreateUnit("armcom", cx, cy, cz, 0, tID)
+				if uID then
+					dummyCommanders[uID] = true
+				end
+			end
+		end
+	end
+
 	for _, uID in ipairs(allUnits) do
 		Spring.DestroyUnit(uID, false, true)
 	end
@@ -151,7 +167,8 @@ local function RestoreCheckpoint(id)
 		step = 1,
 		waitFrames = 5,
 		oldToNewUnit = {},
-		oldToNewFeature = {}
+		oldToNewFeature = {},
+		dummyCommanders = dummyCommanders
 	}
 end
 
@@ -277,6 +294,15 @@ local function ProcessRestore(frame)
 			if cp.res[t] then
 				Spring.SetTeamResource(t, "metal", cp.res[t].m)
 				Spring.SetTeamResource(t, "energy", cp.res[t].e)
+			end
+		end
+
+		-- Clean up dummy commanders
+		if pendingRestore.dummyCommanders then
+			for uID in pairs(pendingRestore.dummyCommanders) do
+				if Spring.ValidUnitID(uID) then
+					Spring.DestroyUnit(uID, false, true)
+				end
 			end
 		end
 

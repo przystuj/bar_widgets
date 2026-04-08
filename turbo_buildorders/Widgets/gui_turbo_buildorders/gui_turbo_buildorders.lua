@@ -341,7 +341,6 @@ modelData = {
 		dm.savedRuns = savedRunsHistory
 		dm.hasSavedRun = true
 		dm.showRunsPanel = true
-		if docRuns then docRuns:Show() end
 
 		pendingScrollToRightFrame = spGetGameFrame() + 2
 	end,
@@ -734,6 +733,8 @@ function widget:Initialize()
 	docRuns = widget.rmlContext:LoadDocument(RML_RUNS_PATH, widget)
 	if docRuns then
 		docRuns:ReloadStyleSheet()
+		docRuns:Hide()
+		dm.showRunsPanel = false
 	end
 end
 
@@ -775,6 +776,13 @@ function widget:UnitFinished(unitID, unitDefID, unitTeam)
 end
 
 function widget:GameFrame(f)
+	if f < 10 then
+		if docRuns then
+			docRuns:Hide()
+			dm.showRunsPanel = false
+		end
+	end
+
 	if f == 11 then
 		local range = spGetTeamStatsHistory(trackedTeamID)
 		local history = spGetTeamStatsHistory(trackedTeamID, range)
@@ -911,12 +919,16 @@ function widget:Shutdown()
 end
 
 function widget:RecvLuaMsg(message, playerID)
-	local isActive0 = (message:sub(1, 19) == 'LobbyOverlayActive0')
-	local isActive1 = (message:sub(1, 19) == 'LobbyOverlayActive1')
+	local shouldShow = (message:sub(1, 19) == 'LobbyOverlayActive0')
+	local shouldHide = (message:sub(1, 19) == 'LobbyOverlayActive1')
 
-	if isActive0 or isActive1 then
-		if docMain then (isActive0 and docMain.Show or docMain.Hide)(docMain) end
-		if docRuns then (isActive0 and docRuns.Show or docRuns.Hide)(docRuns) end
+	if shouldShow then
+		docMain:Show()
+	end
+
+	if shouldHide then
+		docMain:Hide()
+		docRuns:Hide()
 	end
 
 	if string.sub(message, 1, 13) == "TurboRestart " then
